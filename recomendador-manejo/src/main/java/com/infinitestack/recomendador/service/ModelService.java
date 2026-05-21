@@ -31,7 +31,8 @@ public class ModelService {
     private final DataService dataService;
     private RandomForest rf;
     private GradientTreeBoost gbm;
-    private boolean trained = false;
+    private volatile boolean trained = false;
+    private volatile boolean training = false;
     private int sampleCount = 0;
 
     public ModelService(DataService dataService) {
@@ -40,8 +41,21 @@ public class ModelService {
 
     @PostConstruct
     public void scheduleTraining() {
-        // Run async so Tomcat starts and health endpoint responds before training completes
         CompletableFuture.runAsync(this::train);
+    }
+
+    public void retrain(String sql) {
+        if (training) return;
+        CompletableFuture.runAsync(() -> {
+            trained = false;
+            training = true;
+            try {
+                dataService.reload(sql);
+                train();
+            } finally {
+                training = false;
+            }
+        });
     }
 
     private void train() {
@@ -265,5 +279,6 @@ public class ModelService {
     }
 
     public boolean isTrained() { return trained; }
+    public boolean isTraining() { return training; }
     public int getSampleCount() { return sampleCount; }
 }

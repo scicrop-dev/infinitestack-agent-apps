@@ -13,7 +13,7 @@ public class DataService {
 
     private static final Logger log = LoggerFactory.getLogger(DataService.class);
 
-    private static final String QUERY = """
+    private static final String DEFAULT_QUERY = """
         SELECT "QT_TCH_REAL", "GDD_CICLO", "DIAS_CICLO", "PLUVIOMETRIA_CICLO",
                "PLUVIOMETRIA_PREV_1M", "DE_VARIED", "CD_ESTAGIO", "MES_COLHEITA",
                "MES_PLANTIO", "QT_POTASSIO_M3", "DS_TERRA", "CD_FORNEC",
@@ -25,6 +25,7 @@ public class DataService {
 
     private final JdbcTemplate jdbc;
 
+    private String currentQuery = DEFAULT_QUERY;
     private List<Map<String, Object>> rawData = new ArrayList<>();
     private List<String> distinctVarieties = new ArrayList<>();
     private List<Integer> distinctEstagios = new ArrayList<>();
@@ -50,15 +51,23 @@ public class DataService {
 
     @PostConstruct
     public void load() {
+        reload(currentQuery);
+    }
+
+    public synchronized void reload(String sql) {
         try {
-            rawData = jdbc.queryForList(QUERY);
-            log.info("[DataService] Loaded {} rows from gold.sugarcane_productivity", rawData.size());
+            currentQuery = sql;
+            rawData = jdbc.queryForList(sql);
+            log.info("[DataService] Loaded {} rows", rawData.size());
             buildEncodings();
             computeStats();
         } catch (Exception e) {
             log.error("[DataService] Failed to load data: {}", e.getMessage());
         }
     }
+
+    public String getQuery() { return currentQuery; }
+    public void setQuery(String sql) { currentQuery = sql; }
 
     private void buildEncodings() {
         Set<String> varieties = new LinkedHashSet<>();
