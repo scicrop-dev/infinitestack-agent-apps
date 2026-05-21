@@ -5,7 +5,7 @@
   "description": "Modelos preditivos Random Forest e XGBoost para produtividade de cana (QT_TCH_REAL) com simulação de cenários climáticos e variações de manejo.",
   "entrypoint": "com.infinitestack.recomendador.Application",
   "base_path": "/api/plugins/recomendador-manejo",
-  "supported_destination_databases": ["postgresql"],
+  "supported_destination_databases": ["postgres"],
   "requires_host_authentication": true,
   "requires_host_authorization": true,
   "requires_host_datasource": true,
