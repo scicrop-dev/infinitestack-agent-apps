@@ -11,6 +11,7 @@ import smile.regression.RandomForest;
 
 import jakarta.annotation.PostConstruct;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class ModelService {
@@ -38,7 +39,12 @@ public class ModelService {
     }
 
     @PostConstruct
-    public void train() {
+    public void scheduleTraining() {
+        // Run async so Tomcat starts and health endpoint responds before training completes
+        CompletableFuture.runAsync(this::train);
+    }
+
+    private void train() {
         List<Map<String, Object>> rows = dataService.getRawData();
         if (rows.isEmpty()) {
             log.warn("[ModelService] No data to train on");
