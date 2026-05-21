@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recomendador de Manejo</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0d0d0d;
+            --surface: #161616;
+            --surface2: #1e1e1e;
+            --border: #2a2a2a;
+            --text: #e8e8e8;
+            --muted: #6b6b6b;
+            --accent: #4ade80;
+            --accent2: #60a5fa;
+            --danger: #f87171;
+            --warn: #facc15;
+            --radius: 8px;
+            --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 14px;
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+        header .badge {
+            font-size: 11px;
+            background: #1a2e1a;
+            color: var(--accent);
+            border: 1px solid #2d4a2d;
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+        #model-status {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+        .dot.ready { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 0;
+            height: calc(100vh - 53px);
+            overflow: hidden;
+        }
+
+        /* ── FORM PANEL ─────────────────────────────────────── */
+        .form-panel {
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 20px 18px;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 14px;
+        }
+
+        .field { margin-bottom: 14px; }
+        .field label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        select, input {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-family: var(--font);
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        select:focus, input:focus { border-color: var(--accent); }
+        select option { background: #1e1e1e; }
+
+        .btn {
+            width: 100%;
+            padding: 10px;
+            background: var(--accent);
+            color: #0d1a0d;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 0.03em;
+            transition: opacity 0.15s;
+            margin-top: 6px;
+        }
+        .btn:hover { opacity: 0.88; }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        .auto-badge {
+            font-size: 10px;
+            color: var(--accent2);
+            background: #0f1e30;
+            border: 1px solid #1a3a5c;
+            padding: 1px 6px;
+            border-radius: 10px;
+            margin-left: 4px;
+        }
+
+        .derived-info {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 12px;
+            margin-top: 14px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .derived-info span { color: var(--text); font-weight: 600; }
+
+        /* ── RESULTS PANEL ──────────────────────────────────── */
+        .results-panel {
+            overflow-y: auto;
+            padding: 20px 24px;
+        }
+
+        .placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--muted);
+            gap: 10px;
+            text-align: center;
+        }
+        .placeholder svg { opacity: 0.25; }
+
+        #results { display: none; }
+
+        .results-header {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .results-header h2 { font-size: 15px; font-weight: 600; }
+        .results-header .sub { font-size: 12px; color: var(--muted); }
+
+        /* scenario cards */
+        .scenarios-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-bottom: 28px;
+        }
+
+        .scenario-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 14px 12px;
+            position: relative;
+            overflow: hidden;
+        }
+        .scenario-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+        }
+        .scenario-card.pessimo::before  { background: var(--danger); }
+        .scenario-card.ruim::before     { background: #fb923c; }
+        .scenario-card.medio::before    { background: var(--warn); }
+        .scenario-card.bom::before      { background: #86efac; }
+        .scenario-card.excelente::before { background: var(--accent); }
+
+        .card-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 12px;
+        }
+        .scenario-card.pessimo .card-label  { color: var(--danger); }
+        .scenario-card.ruim .card-label     { color: #fb923c; }
+        .scenario-card.medio .card-label    { color: var(--warn); }
+        .scenario-card.bom .card-label      { color: #86efac; }
+        .scenario-card.excelente .card-label { color: var(--accent); }
+
+        .pred-block { margin-bottom: 10px; }
+        .pred-label { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+        .pred-value { font-size: 22px; font-weight: 700; line-height: 1; }
+        .pred-unit  { font-size: 10px; color: var(--muted); }
+        .pred-model { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+        .card-climate { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+        .climate-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+        .climate-key { font-size: 10px; color: var(--muted); }
+        .climate-val { font-size: 10px; color: var(--text); font-weight: 500; }
+
+        /* variations */
+        .variations-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th {
+            text-align: left;
+            padding: 8px 10px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--muted);
+            border-bottom: 1px solid var(--border);
+        }
+        td {
+            padding: 9px 10px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: var(--surface); }
+        .tch-val { font-weight: 700; }
+        .rf-col  { color: var(--accent2); }
+        .gbm-col { color: #c084fc; }
+
+        .spinner {
+            display: none;
+            width: 18px; height: 18px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            margin: auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .error-msg {
+            background: #1f0e0e;
+            border: 1px solid #5a2020;
+            color: var(--danger);
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            margin-top: 16px;
+            display: none;
+        }
+
+        @media (max-width: 1100px) {
+            .scenarios-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+    <h1>Recomendador de Manejo</h1>
+    <span class="badge">Random Forest · XGBoost</span>
+    <div id="model-status">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-text">verificando...</span>
+    </div>
+</header>
+
+<div class="layout">
+    <!-- FORM -->
+    <div class="form-panel">
+        <p class="section-title">Parâmetros de Entrada</p>
+
+        <div class="field">
+            <label>Variedade (DE_VARIED)</label>
+            <select id="sel-varied"><option value="">Carregando...</option></select>
+        </div>
+
+        <div class="field">
+            <label>Estágio (CD_ESTAGIO)</label>
+            <select id="sel-estagio"><option value="">Carregando...</option></select>
+        </div>
+
+        <div class="field">
+            <label>Mês de Plantio</label>
+            <select id="sel-plantio">
+                <option value="">Selecione</option>
+                <option value="1">Jan</option><option value="2">Fev</option>
+                <option value="3">Mar</option><option value="4">Abr</option>
+                <option value="5">Mai</option><option value="6">Jun</option>
+                <option value="7">Jul</option><option value="8">Ago</option>
+                <option value="9">Set</option><option value="10">Out</option>
+                <option value="11">Nov</option><option value="12">Dez</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label>Mês de Colheita</label>
+            <select id="sel-colheita">
+                <option value="">Selecione</option>
+                <option value="1">Jan</option><option value="2">Fev</option>
+                <option value="3">Mar</option><option value="4">Abr</option>
+                <option value="5">Mai</option><option value="6">Jun</option>
+                <option value="7">Jul</option><option value="8">Ago</option>
+                <option value="9">Set</option><option value="10">Out</option>
+                <option value="11">Nov</option><option value="12">Dez</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label>Ambiente de Produção (CD_AMBIENTE_PROD)</label>
+            <select id="sel-ambiente"><option value="">Carregando...</option></select>
+        </div>
+
+        <div class="derived-info" id="derived-info" style="display:none">
+            Dias de ciclo estimados: <span id="dias-info">—</span> dias<br>
+            Fornecedor (mediana): <span id="fornec-info">—</span>
+        </div>
+
+        <div style="margin-top:20px">
+            <div class="spinner" id="spinner"></div>
+            <button class="btn" id="btn-simular" onclick="simular()">Simular Cenários</button>
+        </div>
+
+        <div class="error-msg" id="error-msg"></div>
+    </div>
+
+    <!-- RESULTS -->
+    <div class="results-panel">
+        <div class="placeholder" id="placeholder">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                <path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-4"/>
+            </svg>
+            <p>Preencha os parâmetros e clique em<br><strong>Simular Cenários</strong></p>
+        </div>
+
+        <div id="results">
+            <div class="results-header">
+                <h2 id="results-title">Simulação</h2>
+                <span class="sub" id="results-sub"></span>
+            </div>
+
+            <p class="section-title" style="margin-bottom:12px">5 Cenários Climáticos → Produtividade (TCH)</p>
+            <div class="scenarios-grid" id="scenarios-grid"></div>
+
+            <p class="variations-title">Variações Alternativas (Cenário Médio)</p>
+            <table id="variations-table">
+                <thead>
+                    <tr>
+                        <th>Variedade</th>
+                        <th>Plantio</th>
+                        <th>Colheita</th>
+                        <th>Dias ciclo</th>
+                        <th class="rf-col">RF (TCH)</th>
+                        <th class="gbm-col">XGBoost (TCH)</th>
+                    </tr>
+                </thead>
+                <tbody id="variations-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script th:inline="javascript">
+    const BASE = /*[[${pluginBasePath}]]*/ '/api/plugins/recomendador-manejo';
+    const MESES = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+    // ── Model status polling ───────────────────────────────────────────────
+    function checkStatus() {
+        fetch(BASE + '/api/model-status')
+            .then(r => r.json())
+            .then(d => {
+                const dot = document.getElementById('status-dot');
+                const txt = document.getElementById('status-text');
+                if (d.trained) {
+                    dot.classList.add('ready');
+                    txt.textContent = `Pronto · ${d.sampleCount.toLocaleString()} amostras`;
+                    document.getElementById('btn-simular').disabled = false;
+                } else {
+                    txt.textContent = 'Treinando modelos…';
+                    setTimeout(checkStatus, 2500);
+                }
+            })
+            .catch(() => setTimeout(checkStatus, 3000));
+    }
+
+    // ── Load options ───────────────────────────────────────────────────────
+    function loadOpcoes() {
+        fetch(BASE + '/api/opcoes')
+            .then(r => r.json())
+            .then(data => {
+                fillSelect('sel-varied', data.varieties, v => ({ value: v, text: v }));
+                fillSelect('sel-estagio', data['estágios'], v => ({ value: v, text: `Estágio ${v}` }));
+                fillSelect('sel-ambiente', data.ambientes, v => ({ value: v, text: `Ambiente ${v}` }));
+            })
+            .catch(() => setTimeout(loadOpcoes, 3000));
+    }
+
+    function fillSelect(id, items, mapper) {
+        const sel = document.getElementById(id);
+        sel.innerHTML = '<option value="">Selecione</option>';
+        (items || []).forEach(item => {
+            const m = mapper(item);
+            const opt = document.createElement('option');
+            opt.value = m.value;
+            opt.textContent = m.text;
+            sel.appendChild(opt);
+        });
+    }
+
+    // ── Derived fields ─────────────────────────────────────────────────────
+    ['sel-plantio', 'sel-colheita'].forEach(id =>
+        document.getElementById(id).addEventListener('change', updateDerived)
+    );
+
+    function updateDerived() {
+        const p = parseInt(document.getElementById('sel-plantio').value);
+        const c = parseInt(document.getElementById('sel-colheita').value);
+        if (!p || !c) { document.getElementById('derived-info').style.display = 'none'; return; }
+        let diff = c - p;
+        if (diff <= 0) diff += 12;
+        let dias = diff * 30;
+        if (dias < 300) dias += 365;
+        document.getElementById('dias-info').textContent = dias;
+        document.getElementById('derived-info').style.display = 'block';
+    }
+
+    // ── Simulate ───────────────────────────────────────────────────────────
+    function simular() {
+        const varied  = document.getElementById('sel-varied').value;
+        const estagio = document.getElementById('sel-estagio').value;
+        const plantio = document.getElementById('sel-plantio').value;
+        const colheita= document.getElementById('sel-colheita').value;
+        const ambiente= document.getElementById('sel-ambiente').value;
+
+        if (!varied || !estagio || !plantio || !colheita || !ambiente) {
+            showError('Preencha todos os campos.'); return;
+        }
+        hideError();
+        setLoading(true);
+
+        fetch(BASE + '/api/simular', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                deVaried: varied,
+                cdEstagio: parseInt(estagio),
+                mesPlantio: parseInt(plantio),
+                mesColheita: parseInt(colheita),
+                cdAmbienteProd: parseInt(ambiente)
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { showError(data.error); return; }
+            renderResults(data, varied, estagio, plantio, colheita, ambiente);
+            document.getElementById('fornec-info').textContent = data.cdFornec;
+            document.getElementById('derived-info').style.display = 'block';
+        })
+        .catch(e => showError('Erro de conexão: ' + e.message))
+        .finally(() => setLoading(false));
+    }
+
+    function renderResults(data, varied, estagio, plantio, colheita, ambiente) {
+        document.getElementById('placeholder').style.display = 'none';
+        document.getElementById('results').style.display = 'block';
+        document.getElementById('results-title').textContent = varied;
+        document.getElementById('results-sub').textContent =
+            `Est. ${estagio} · Plantio ${MESES[parseInt(plantio)]} · Colheita ${MESES[parseInt(colheita)]} · Amb. ${ambiente} · ${data.diasCiclo}d`;
+
+        // scenarios
+        const grid = document.getElementById('scenarios-grid');
+        grid.innerHTML = '';
+        (data.scenarios || []).forEach(s => {
+            const card = document.createElement('div');
+            card.className = `scenario-card ${s.name}`;
+            card.innerHTML = `
+                <div class="card-label">${s.label}</div>
+                <div class="pred-block">
+                    <div class="pred-label">Random Forest</div>
+                    <div class="pred-value" style="color: var(--accent2)">${s.rfPrediction.toFixed(1)}</div>
+                    <div class="pred-unit">TCH (t/ha)</div>
+                </div>
+                <div class="pred-block">
+                    <div class="pred-label">XGBoost</div>
+                    <div class="pred-value" style="color: #c084fc">${s.gbmPrediction.toFixed(1)}</div>
+                    <div class="pred-unit">TCH (t/ha)</div>
+                </div>
+                <div class="card-climate">
+                    <div class="climate-row">
+                        <span class="climate-key">GDD ciclo</span>
+                        <span class="climate-val">${s.gddCiclo.toFixed(0)}</span>
+                    </div>
+                    <div class="climate-row">
+                        <span class="climate-key">Chuva ciclo</span>
+                        <span class="climate-val">${s.pluviometriaCiclo.toFixed(0)} mm</span>
+                    </div>
+                    <div class="climate-row">
+                        <span class="climate-key">Chuva prev.</span>
+                        <span class="climate-val">${s.pluviometriaPrev1m.toFixed(0)} mm</span>
+                    </div>
+                    <div class="climate-row">
+                        <span class="climate-key">K (m³)</span>
+                        <span class="climate-val">${s.qtPotassioM3.toFixed(2)}</span>
+                    </div>
+                </div>`;
+            grid.appendChild(card);
+        });
+
+        // variations
+        const tbody = document.getElementById('variations-body');
+        tbody.innerHTML = '';
+        (data.variations || []).forEach(v => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${v.deVaried}</td>
+                <td>${MESES[v.mesPlantio]}</td>
+                <td>${MESES[v.mesColheita]}</td>
+                <td>${v.diasCiclo}d</td>
+                <td class="rf-col tch-val">${v.rfPrediction.toFixed(1)}</td>
+                <td class="gbm-col tch-val">${v.gbmPrediction.toFixed(1)}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function setLoading(on) {
+        document.getElementById('spinner').style.display = on ? 'block' : 'none';
+        document.getElementById('btn-simular').style.display = on ? 'none' : 'block';
+    }
+    function showError(msg) {
+        const el = document.getElementById('error-msg');
+        el.textContent = msg; el.style.display = 'block';
+    }
+    function hideError() {
+        document.getElementById('error-msg').style.display = 'none';
+    }
+
+    document.getElementById('btn-simular').disabled = true;
+    loadOpcoes();
+    checkStatus();
+</script>
+</body>
+</html>
