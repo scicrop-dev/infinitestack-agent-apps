@@ -1,0 +1,20 @@
+{
+  "plugin_id": "satellite-hub-viewer",
+  "name": "Satellite Hub Viewer",
+  "version": "1.0.0",
+  "description": "Visualização de áreas de interesse e do histórico temporal de imagens de satélite (Sentinel-2) sincronizadas pelo Satellite Sync, com mapa interativo MapLibre, timeline, thumbnails e metadados. Leitura somente das tabelas satellite_hub_areas e satellite_hub_images.",
+  "entrypoint": "com.infinitestack.satellitehubviewer.Application",
+  "base_path": "/api/plugins/satellite-hub-viewer",
+  "supported_destination_databases": ["postgres"],
+  "requires_host_authentication": true,
+  "requires_host_authorization": true,
+  "requires_host_datasource": true,
+  "allows_own_user_store": false,
+  "allows_own_datasource": false,
+  "web": {
+    "templates_path": "templates",
+    "static_path": "static",
+    "thymeleaf": true,
+    "local_assets_only": true
+  }
+}

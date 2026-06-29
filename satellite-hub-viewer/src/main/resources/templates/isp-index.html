@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Satellite Hub Viewer</title>
+    <link rel="stylesheet" th:href="@{${pluginAssetsPath} + '/maplibre-gl.css'}">
+    <style>
+        :root {
+            --bg: #0d0f12; --panel: #16191e; --panel-2: #1e232b; --border: #2a2f38;
+            --text: #e8eaed; --muted: #8a909b; --accent: #3ba776; --accent-2: #2f7fd1;
+            --danger: #d9534f; --chip: #232a33;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; }
+        body {
+            background: var(--bg); color: var(--text);
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            display: grid; grid-template-rows: auto 1fr auto; height: 100vh; overflow: hidden;
+        }
+        /* Header */
+        header {
+            display: flex; align-items: center; gap: 24px; padding: 10px 18px;
+            background: var(--panel); border-bottom: 1px solid var(--border);
+        }
+        header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+        header h1 span { color: var(--accent); }
+        .stats { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
+        .stat { display: flex; flex-direction: column; line-height: 1.2; }
+        .stat .v { font-size: 15px; font-weight: 600; }
+        .stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+        /* Main */
+        main { display: grid; grid-template-columns: 320px 1fr; min-height: 0; }
+        .sidebar {
+            background: var(--panel); border-right: 1px solid var(--border);
+            overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 16px;
+        }
+        .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 8px; }
+        .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+        .field label { font-size: 11px; color: var(--muted); }
+        input[type=text], input[type=date] {
+            background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+            border-radius: 6px; padding: 7px 9px; font-size: 13px; width: 100%;
+        }
+        input[type=range] { width: 100%; }
+        /* Filtro de cobertura de nuvens — azul com letra preta para leitura clara */
+        .cloud-filter {
+            background: #cfe3ff; border: 1px solid #2f7fd1; border-radius: 8px;
+            padding: 8px 10px; margin-bottom: 10px;
+        }
+        .cloud-filter label { color: #000; font-size: 12px; font-weight: 600; }
+        .cloud-filter strong { color: #0a3d7a; }
+        .cloud-filter input[type=range] { accent-color: #1565c0; margin-top: 4px; }
+        .row { display: flex; gap: 8px; }
+        .row > * { flex: 1; }
+        button {
+            background: var(--accent); color: #fff; border: none; border-radius: 6px;
+            padding: 8px 12px; font-size: 13px; cursor: pointer; font-weight: 500;
+        }
+        button.secondary { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+        button:disabled { opacity: .5; cursor: default; }
+        .area-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; }
+        .area-item {
+            padding: 8px 10px; border-radius: 6px; background: var(--panel-2); cursor: pointer;
+            border: 1px solid transparent; font-size: 13px; display: flex; justify-content: space-between; gap: 8px;
+        }
+        .area-item:hover { border-color: var(--border); }
+        .area-item.active { border-color: var(--accent); background: #1b2620; }
+        .area-item .count { color: var(--muted); font-size: 11px; }
+        .area-detail { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+        .area-detail .kv { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
+        .area-detail .kv .k { color: var(--muted); }
+        /* Map */
+        .map-wrap { position: relative; min-height: 0; }
+        #map { position: absolute; inset: 0; }
+        .map-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+        .map-controls button { box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+        .overlay-msg {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+            background: rgba(0,0,0,.7); padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 6;
+        }
+        /* Timeline */
+        .timeline-bar { background: var(--panel); border-top: 1px solid var(--border); padding: 10px 14px; min-height: 92px; }
+        .timeline-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+        .timeline-head .t { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+        .timeline-head .info { font-size: 12px; color: var(--text); }
+        .timeline {
+            display: flex; flex-wrap: nowrap; gap: 6px; padding-bottom: 6px;
+            overflow-x: auto; overflow-y: hidden; min-width: 0; scroll-behavior: smooth;
+        }
+        .timeline::-webkit-scrollbar { height: 8px; }
+        .timeline::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .timeline::-webkit-scrollbar-track { background: transparent; }
+        .tl-item {
+            flex: 0 0 auto; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+            padding: 6px 9px; cursor: pointer; min-width: 96px; text-align: center;
+        }
+        .tl-item:hover { border-color: var(--accent-2); }
+        .tl-item.active { border-color: var(--accent); background: #1b2620; }
+        .tl-item .d { font-size: 12px; font-weight: 600; }
+        .tl-item .c { font-size: 10px; color: var(--muted); margin-top: 2px; }
+        .cloud-pill { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px; color: #000; font-weight: 700; }
+        /* Modal */
+        .modal-backdrop {
+            position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 50;
+            display: none; align-items: center; justify-content: center; padding: 24px;
+        }
+        .modal-backdrop.open { display: flex; }
+        .modal {
+            background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+            width: min(960px, 96vw); max-height: 92vh; overflow: hidden; display: grid;
+            grid-template-columns: 1fr 360px;
+        }
+        .modal-img { background: #000; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .modal-img img { max-width: 100%; max-height: 92vh; transition: transform .15s ease; transform-origin: center center; cursor: zoom-in; }
+        .modal-img .noimg { color: var(--muted); font-size: 13px; }
+        .modal-side { padding: 16px; overflow-y: auto; border-left: 1px solid var(--border); }
+        .modal-side h3 { margin: 0 0 12px; font-size: 14px; }
+        .modal-side .kv { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+        .modal-side .kv .k { color: var(--muted); }
+        .meta-head { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 6px; }
+        .meta-head .t { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+        pre.meta {
+            background: #0b0d10; border: 1px solid var(--border); border-radius: 6px; padding: 10px;
+            font-size: 11px; line-height: 1.5; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+        }
+        pre.meta.collapsed { max-height: 90px; }
+        .modal-close { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.6); border-radius: 6px; padding: 6px 10px; cursor: pointer; z-index: 2; }
+        .small-btn { font-size: 11px; padding: 4px 8px; }
+        .loader { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .err { color: var(--danger); font-size: 12px; }
+        .muted { color: var(--muted); }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Satellite Hub <span>Viewer</span></h1>
+        <div class="stats">
+            <div class="stat"><span class="v" id="stat-areas">—</span><span class="l">Áreas</span></div>
+            <div class="stat"><span class="v" id="stat-images">—</span><span class="l">Imagens</span></div>
+            <div class="stat"><span class="v" id="stat-sync">—</span><span class="l">Última sincronização</span></div>
+            <div class="stat"><span class="v" id="stat-last">—</span><span class="l">Última imagem</span></div>
+        </div>
+    </header>
+
+    <main>
+        <aside class="sidebar">
+            <div>
+                <p class="section-title">Buscar área</p>
+                <input type="text" id="area-search" placeholder="Nome da área...">
+                <div class="area-list" id="area-list"><span class="muted" style="font-size:12px">Carregando áreas… <span class="loader"></span></span></div>
+            </div>
+
+            <div>
+                <p class="section-title">Filtros de imagem</p>
+                <div class="row">
+                    <div class="field"><label>Data inicial</label><input type="date" id="f-start"></div>
+                    <div class="field"><label>Data final</label><input type="date" id="f-end"></div>
+                </div>
+                <div class="field cloud-filter">
+                    <label>☁ Cobertura de nuvens máx.: <strong><span id="cloud-val">100</span>%</strong></label>
+                    <input type="range" id="f-cloud" min="0" max="100" value="100" step="1">
+                </div>
+                <div class="row">
+                    <button id="apply-filters">Aplicar</button>
+                    <button class="secondary" id="clear-filters">Limpar</button>
+                </div>
+            </div>
+
+            <div id="area-detail-wrap" style="display:none">
+                <p class="section-title">Área selecionada</p>
+                <div class="area-detail" id="area-detail"></div>
+            </div>
+        </aside>
+
+        <div class="map-wrap">
+            <div id="map"></div>
+            <div class="map-controls">
+                <button class="secondary small-btn" id="toggle-base">🛰 Satélite</button>
+                <button class="secondary small-btn" id="fit-areas">⤢ Áreas</button>
+                <button class="secondary small-btn" id="remove-cog" style="display:none">✕ Imagem</button>
+            </div>
+            <div class="overlay-msg" id="map-msg" style="display:none"></div>
+        </div>
+    </main>
+
+    <div class="timeline-bar">
+        <div class="timeline-head">
+            <span class="t">Timeline de imagens</span>
+            <span class="info" id="timeline-info">Selecione uma área para ver o histórico.</span>
+        </div>
+        <div class="timeline" id="timeline"></div>
+    </div>
+
+    <!-- Modal de imagem -->
+    <div class="modal-backdrop" id="modal">
+        <div class="modal">
+            <div class="modal-img" id="modal-img">
+                <span class="modal-close" id="modal-close">✕ Fechar</span>
+                <span class="noimg">—</span>
+            </div>
+            <div class="modal-side">
+                <h3 id="modal-title">Imagem</h3>
+                <div id="modal-kv"></div>
+                <button id="view-on-map" style="display:none; width:100%; margin-top:10px">🗺 Ver no mapa (COG)</button>
+                <div class="meta-head">
+                    <span class="t">Metadados</span>
+                    <span>
+                        <button class="secondary small-btn" id="meta-toggle">Expandir</button>
+                        <button class="secondary small-btn" id="meta-copy">Copiar</button>
+                    </span>
+                </div>
+                <pre class="meta collapsed" id="modal-meta">—</pre>
+            </div>
+        </div>
+    </div>
+
+    <script th:src="@{${pluginAssetsPath} + '/maplibre-gl.js'}"></script>
+    <!-- Leitura/recorte do COG no próprio navegador (sem tile server externo). -->
+    <script th:src="@{${pluginAssetsPath} + '/geotiff.min.js'}"></script>
+    <script th:src="@{${pluginAssetsPath} + '/proj4.js'}"></script>
+    <!-- Bloco inline minimo: injeta base-path e endpoint do tile server (COG). -->
+    <script th:inline="javascript">
+        window.__SAT__ = {
+            base:  /*[[${pluginBasePath}]]*/ '/api/plugins/satellite-hub-viewer',
+            tiler: /*[[${cogTiler}]]*/ 'https://titiler.xyz'
+        };
+    </script>
+    <script>
+        const BASE = window.__SAT__.base;
+        const API = BASE + '/api';
+        const TILER = (window.__SAT__.tiler || 'https://titiler.xyz').replace(/\/+$/, '');
+
+        // ── Estado global (módulo simples, papel dos "signals") ──────────────
+        const state = {
+            areas: null,          // FeatureCollection
+            selectedAreaId: null,
+            images: [],           // imagens exibidas na timeline (recentes ou da área)
+            imagesTotal: 0,
+            mode: 'recent',       // 'recent' (ao abrir) | 'area'
+            selectedImageId: null,
+            baseLayer: 'osm',     // 'osm' | 'satellite'
+        };
+
+        // ── Mapa ─────────────────────────────────────────────────────────────
+        const mapStyle = {
+            version: 8,
+            sources: {
+                osm: { type: 'raster', tileSize: 256, attribution: '© OpenStreetMap',
+                       tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'] },
+                satellite: { type: 'raster', tileSize: 256, attribution: '© Esri World Imagery',
+                       tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'] }
+            },
+            layers: [
+                { id: 'osm', type: 'raster', source: 'osm', layout: { visibility: 'visible' } },
+                { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } }
+            ]
+        };
+
+        const map = new maplibregl.Map({
+            container: 'map', style: mapStyle, center: [-50, -15], zoom: 3, attributionControl: true,
+            // trava rotação/inclinação para o mapa nunca ficar "torto" (girado/inclinado)
+            bearing: 0, pitch: 0, dragRotate: false, pitchWithRotate: false, touchPitch: false
+        });
+        map.touchZoomRotate.disableRotation();
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+
+        // Mantém o canvas do MapLibre sincronizado com o tamanho real do container
+        // (essencial dentro do iframe do IS, que pode redimensionar após o init —
+        //  sem isso o canvas fica com aspecto errado, distorcendo o mapa e os cliques).
+        function fixMapSize() { try { map.resize(); } catch (e) {} }
+        window.addEventListener('resize', fixMapSize);
+        if (window.ResizeObserver) {
+            new ResizeObserver(fixMapSize).observe(document.getElementById('map'));
+        }
+        map.on('load', fixMapSize);
+        setTimeout(fixMapSize, 300);
+        setTimeout(fixMapSize, 1200);
+
+        map.on('load', () => {
+            map.addSource('areas', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+            // fill transparente (sem preenchimento) — mantido apenas para captar o clique na área
+            map.addLayer({ id: 'areas-fill', type: 'fill', source: 'areas',
+                paint: { 'fill-color': '#3ba776', 'fill-opacity': 0 } });
+            map.addLayer({ id: 'areas-line', type: 'line', source: 'areas',
+                paint: { 'line-color': '#3ba776', 'line-width': 1.5 } });
+            map.addLayer({ id: 'areas-sel', type: 'line', source: 'areas',
+                paint: { 'line-color': '#f5c542', 'line-width': 3 },
+                filter: ['==', ['get', 'id'], -1] });
+
+            map.on('click', 'areas-fill', (e) => {
+                const f = e.features && e.features[0];
+                if (f) selectArea(f.properties.id);
+            });
+            map.on('mouseenter', 'areas-fill', () => map.getCanvas().style.cursor = 'pointer');
+            map.on('mouseleave', 'areas-fill', () => map.getCanvas().style.cursor = '');
+
+            loadAreas();
+        });
+
+        // ── Helpers de fetch ───────────────────────────────────────────────────
+        async function getJson(url) {
+            const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            if (!r.ok) {
+                let detail = r.statusText;
+                try { const j = await r.json(); detail = j.error || j.detail || detail; } catch (_) {}
+                throw new Error(detail);
+            }
+            return r.json();
+        }
+        function mapMsg(text) {
+            const el = document.getElementById('map-msg');
+            if (!text) { el.style.display = 'none'; return; }
+            el.style.display = 'block'; el.innerHTML = text;
+        }
+
+        // ── Dashboard ──────────────────────────────────────────────────────────
+        async function loadDashboard() {
+            try {
+                const d = await getJson(API + '/dashboard');
+                document.getElementById('stat-areas').textContent = d.totalAreas ?? '—';
+                document.getElementById('stat-images').textContent = d.totalImages ?? '—';
+                document.getElementById('stat-sync').textContent = fmtDate(d.lastSync) || '—';
+                document.getElementById('stat-last').textContent = fmtDate(d.lastImageDate) || '—';
+            } catch (e) {
+                console.warn('dashboard', e);
+            }
+        }
+
+        // ── Áreas (carregadas uma vez) ──────────────────────────────────────────
+        async function loadAreas() {
+            mapMsg('Carregando áreas… <span class="loader"></span>');
+            try {
+                const fc = await getJson(API + '/areas');
+                state.areas = fc;
+                map.getSource('areas').setData(fc);
+                renderAreaList(fc.features);
+                fitToAreas();
+                mapMsg(null);
+            } catch (e) {
+                mapMsg('<span class="err">Erro ao carregar áreas: ' + e.message + '</span>');
+                document.getElementById('area-list').innerHTML = '<span class="err" style="font-size:12px">' + e.message + '</span>';
+            }
+        }
+
+        function renderAreaList(features) {
+            const term = (document.getElementById('area-search').value || '').toLowerCase();
+            const list = document.getElementById('area-list');
+            const filtered = features.filter(f => (f.properties.name || '').toLowerCase().includes(term));
+            if (!filtered.length) { list.innerHTML = '<span class="muted" style="font-size:12px">Nenhuma área.</span>'; return; }
+            list.innerHTML = '';
+            filtered.forEach(f => {
+                const div = document.createElement('div');
+                div.className = 'area-item' + (f.properties.id === state.selectedAreaId ? ' active' : '');
+                div.innerHTML = '<span>' + escapeHtml(f.properties.name || ('Área ' + f.properties.id)) +
+                                '</span><span class="count">' + (f.properties.imageCount ?? 0) + ' img</span>';
+                div.onclick = () => selectArea(f.properties.id);
+                list.appendChild(div);
+            });
+        }
+
+        // ── Seleção de área ──────────────────────────────────────────────────────
+        async function selectArea(id) {
+            state.selectedAreaId = id;
+            map.setFilter('areas-sel', ['==', ['get', 'id'], id]);
+            renderAreaList(state.areas.features);
+
+            const feat = state.areas.features.find(f => f.properties.id === id);
+            if (feat) {
+                renderAreaDetail(feat.properties);
+                fitToGeometry(feat.geometry);
+            }
+            await loadImages();
+        }
+
+        function renderAreaDetail(p) {
+            const wrap = document.getElementById('area-detail-wrap');
+            wrap.style.display = 'block';
+            document.getElementById('area-detail').innerHTML =
+                kv('Fazenda', escapeHtml(p.farmName || '—')) +
+                kv('Talhão', escapeHtml(p.blockName || '—')) +
+                kv('Parcela', escapeHtml(p.parcelName || '—')) +
+                kv('ID', p.id) +
+                kv('Imagens', p.imageCount ?? 0) +
+                kv('Última imagem', fmtDate(p.lastImageDate) || '—') +
+                kv('Nuvem média', p.avgCloudCover != null ? p.avgCloudCover.toFixed(1) + '%' : '—');
+        }
+
+        // ── Imagens mais recentes (ao abrir o app, antes de escolher área) ────────
+        async function loadRecentImages() {
+            state.mode = 'recent';
+            state.selectedAreaId = null;
+            const info = document.getElementById('timeline-info');
+            info.innerHTML = 'Carregando imagens recentes… <span class="loader"></span>';
+            document.getElementById('timeline').innerHTML = '';
+            try {
+                const items = await getJson(API + '/images/recent?limit=50');
+                state.images = items || [];
+                state.imagesTotal = state.images.length;
+                renderTimeline(true);
+            } catch (err) {
+                info.innerHTML = '<span class="err">Erro: ' + err.message + '</span>';
+            }
+        }
+
+        // ── Imagens da área selecionada (sob demanda) ─────────────────────────────
+        async function loadImages() {
+            if (state.selectedAreaId == null) return;
+            state.mode = 'area';
+            const info = document.getElementById('timeline-info');
+            info.innerHTML = 'Carregando imagens… <span class="loader"></span>';
+            document.getElementById('timeline').innerHTML = '';
+            const params = new URLSearchParams();
+            const s = document.getElementById('f-start').value;
+            const e = document.getElementById('f-end').value;
+            const c = document.getElementById('f-cloud').value;
+            if (s) params.set('start_date', s);
+            if (e) params.set('end_date', e);
+            if (c != null && c !== '') params.set('max_cloud_cover', c);
+            params.set('size', '500');
+            try {
+                const data = await getJson(API + '/areas/' + state.selectedAreaId + '/images?' + params.toString());
+                state.images = data.items || [];
+                state.imagesTotal = data.total != null ? data.total : state.images.length;
+                renderTimeline(true);
+            } catch (err) {
+                info.innerHTML = '<span class="err">Erro: ' + err.message + '</span>';
+            }
+        }
+
+        function renderTimeline(resetScroll) {
+            const info = document.getElementById('timeline-info');
+            const tl = document.getElementById('timeline');
+            const items = state.images || [];
+            if (!items.length) {
+                info.innerHTML = state.mode === 'recent' ? 'Nenhuma imagem encontrada.' : 'Nenhuma imagem no período/filtro.';
+            } else if (state.mode === 'recent') {
+                info.innerHTML = 'Imagens mais recentes — <b>' + items.length + '</b> (clique em uma área para filtrar por área)';
+            } else {
+                info.innerHTML = '<b>' + items.length + '</b> de ' + state.imagesTotal + ' imagens';
+            }
+            tl.innerHTML = '';
+            items.forEach(img => {
+                const div = document.createElement('div');
+                div.className = 'tl-item' + (img.id === state.selectedImageId ? ' active' : '');
+                const cc = img.cloudCover != null ? img.cloudCover.toFixed(0) + '%' : '—';
+                div.innerHTML = '<div class="d">' + (fmtDate(img.acquisitionDate) || '—') + '</div>' +
+                                '<div class="c"><span class="cloud-pill" style="background:' + cloudColor(img.cloudCover) + '">☁ ' + cc + '</span></div>';
+                div.onclick = () => openImage(img.id);
+                tl.appendChild(div);
+            });
+            if (resetScroll) tl.scrollLeft = 0; // posiciona na imagem mais recente (primeira à esquerda)
+        }
+
+        // ── Modal de imagem ──────────────────────────────────────────────────────
+        let zoomed = false;
+        async function openImage(id) {
+            state.selectedImageId = id;
+            renderTimeline();
+            const modal = document.getElementById('modal');
+            const imgBox = document.getElementById('modal-img');
+            modal.classList.add('open');
+            imgBox.querySelector('.noimg') && (imgBox.innerHTML = '<span class="modal-close" id="modal-close">✕ Fechar</span><span class="noimg">Carregando… <span class="loader"></span></span>');
+            bindModalClose();
+            try {
+                const d = await getJson(API + '/images/' + id);
+                state.currentImage = d;
+                const viewBtn = document.getElementById('view-on-map');
+                viewBtn.style.display = d.visualUrl ? 'block' : 'none';
+                document.getElementById('modal-title').textContent = d.collection || ('Imagem ' + d.id);
+                document.getElementById('modal-kv').innerHTML =
+                    kv('Data', fmtDate(d.acquisitionDate) || '—') +
+                    kv('Cloud cover', d.cloudCover != null ? d.cloudCover.toFixed(1) + '%' : '—') +
+                    kv('Collection', escapeHtml(d.collection || '—')) +
+                    kv('Image ID', escapeHtml(d.imageId || '—')) +
+                    (d.visualUrl ? kv('Visual', '<a href="' + escapeHtml(d.visualUrl) + '" target="_blank" rel="noopener" style="color:var(--accent)">abrir ↗</a>') : '');
+                // thumbnail
+                imgBox.innerHTML = '<span class="modal-close" id="modal-close">✕ Fechar</span>';
+                if (d.thumbnailUrl) {
+                    const im = document.createElement('img');
+                    im.src = d.thumbnailUrl; im.alt = d.imageId || 'thumbnail';
+                    zoomed = false;
+                    im.onclick = () => { zoomed = !zoomed; im.style.transform = zoomed ? 'scale(2.2)' : 'scale(1)'; im.style.cursor = zoomed ? 'zoom-out' : 'zoom-in'; };
+                    im.onerror = () => { imgBox.innerHTML = '<span class="modal-close" id="modal-close">✕ Fechar</span><span class="noimg">Thumbnail indisponível</span>'; bindModalClose(); };
+                    imgBox.appendChild(im);
+                } else {
+                    imgBox.innerHTML += '<span class="noimg">Sem thumbnail</span>';
+                }
+                bindModalClose();
+                // metadata
+                const pre = document.getElementById('modal-meta');
+                pre.dataset.raw = d.metadata || '';
+                pre.textContent = prettyJson(d.metadata);
+                pre.classList.add('collapsed');
+                document.getElementById('meta-toggle').textContent = 'Expandir';
+            } catch (e) {
+                imgBox.innerHTML = '<span class="modal-close" id="modal-close">✕ Fechar</span><span class="err">' + e.message + '</span>';
+                bindModalClose();
+            }
+        }
+        function bindModalClose() {
+            const c = document.getElementById('modal-close');
+            if (c) c.onclick = () => document.getElementById('modal').classList.remove('open');
+        }
+
+        // ── Sobreposição do COG (visual_url) no mapa, recortado ao talhão ──────────
+        // Sem tile server: o próprio navegador lê o COG (geotiff.js, via HTTP range),
+        // recorta apenas a janela que cobre o polígono, reprojeta os cantos UTM→4326
+        // (proj4) e mascara tudo fora do talhão num <canvas>. O resultado entra como
+        // 'image source' nos 4 cantos reais da janela — só a porção dentro do talhão
+        // aparece, com o basemap visível ao redor. Nenhum dado é baixado fora da área.
+        const MAX_COG_PX = 1024;  // maior dimensão do recorte renderizado
+
+        // Define no proj4 a CRS de origem do COG a partir do código EPSG e devolve o nome.
+        function cogSourceCrs(epsg) {
+            if (!epsg || epsg === 4326) return 'EPSG:4326';
+            if (epsg === 3857 || epsg === 900913) return 'EPSG:3857';
+            const name = 'EPSG:' + epsg;
+            if (!proj4.defs(name)) {
+                if (epsg >= 32601 && epsg <= 32660) {
+                    proj4.defs(name, '+proj=utm +zone=' + (epsg - 32600) + ' +datum=WGS84 +units=m +no_defs');
+                } else if (epsg >= 32701 && epsg <= 32760) {
+                    proj4.defs(name, '+proj=utm +zone=' + (epsg - 32700) + ' +south +datum=WGS84 +units=m +no_defs');
+                } else {
+                    throw new Error('CRS do COG não suportada no cliente: ' + name);
+                }
+            }
+            return name;
+        }
+
+        // Lista plana de anéis (lng/lat) de um Polygon/MultiPolygon.
+        function polygonRings(geom) {
+            const rings = [];
+            if (!geom) return rings;
+            if (geom.type === 'Polygon') geom.coordinates.forEach(r => rings.push(r));
+            else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => p.forEach(r => rings.push(r)));
+            return rings;
+        }
+
+        async function showCogOnMap(url) {
+            if (!url) { mapMsg('<span class="err">Esta imagem não possui COG (visual_url).</span>'); setTimeout(() => mapMsg(null), 2500); return; }
+            removeCog();
+            const feat = state.areas && state.areas.features.find(f => f.properties.id === state.selectedAreaId);
+            const geom = feat && feat.geometry;
+            const b = geom && boundsOfGeometry(geom);
+            if (!b) { mapMsg('<span class="err">Área sem geometria para recortar.</span>'); setTimeout(() => mapMsg(null), 2500); return; }
+
+            mapMsg('Lendo e recortando imagem ao talhão… <span class="loader"></span>');
+            try {
+                const tiff = await GeoTIFF.fromUrl(url);
+                const image = await tiff.getImage();
+                const gk = image.getGeoKeys() || {};
+                const epsg = gk.ProjectedCSTypeGeoKey || gk.GeographicTypeGeoKey || 4326;
+                const SRC = cogSourceCrs(epsg);
+
+                // bbox do polígono (4326) → CRS do COG, recortado aos limites reais do COG
+                const imgBox = image.getBoundingBox(); // [minX,minY,maxX,maxY] na CRS do COG
+                const c1 = proj4('EPSG:4326', SRC, [b.getWest(), b.getSouth()]);
+                const c2 = proj4('EPSG:4326', SRC, [b.getEast(), b.getNorth()]);
+                let minX = Math.max(Math.min(c1[0], c2[0]), imgBox[0]);
+                let minY = Math.max(Math.min(c1[1], c2[1]), imgBox[1]);
+                let maxX = Math.min(Math.max(c1[0], c2[0]), imgBox[2]);
+                let maxY = Math.min(Math.max(c1[1], c2[1]), imgBox[3]);
+                if (!(maxX > minX && maxY > minY)) throw new Error('polígono fora da cobertura do COG');
+
+                // dimensões do recorte (preserva proporção, no máximo MAX_COG_PX no maior lado)
+                const wMeters = maxX - minX, hMeters = maxY - minY;
+                const scale = MAX_COG_PX / Math.max(wMeters, hMeters);
+                const W = Math.max(1, Math.round(wMeters * scale));
+                const H = Math.max(1, Math.round(hMeters * scale));
+
+                const samples = image.getSamplesPerPixel();
+                const data = await image.readRasters({ bbox: [minX, minY, maxX, maxY], width: W, height: H, interleave: true });
+
+                // monta RGBA no canvas (visual COG = 3 bandas RGB 8-bit; trata 1 e 4 bandas)
+                const canvas = document.createElement('canvas');
+                canvas.width = W; canvas.height = H;
+                const ctx = canvas.getContext('2d');
+                const imgData = ctx.createImageData(W, H);
+                const px = imgData.data;
+                for (let i = 0, p = 0; i < W * H; i++, p += 4) {
+                    const s = i * samples;
+                    if (samples >= 3) { px[p] = data[s]; px[p + 1] = data[s + 1]; px[p + 2] = data[s + 2]; }
+                    else { const g = data[s]; px[p] = g; px[p + 1] = g; px[p + 2] = g; }
+                    px[p + 3] = 255;
+                }
+                ctx.putImageData(imgData, 0, 0);
+
+                // máscara: mantém só os pixels dentro do polígono (destination-in)
+                ctx.globalCompositeOperation = 'destination-in';
+                ctx.beginPath();
+                polygonRings(geom).forEach(ring => {
+                    ring.forEach((pt, idx) => {
+                        const xy = proj4('EPSG:4326', SRC, [pt[0], pt[1]]);
+                        const cx = (xy[0] - minX) / wMeters * W;
+                        const cy = (maxY - xy[1]) / hMeters * H;
+                        if (idx === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+                    });
+                    ctx.closePath();
+                });
+                ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
+
+                // 4 cantos reais da janela (UTM) reprojetados para 4326 — quad exato no mapa
+                const tl = proj4(SRC, 'EPSG:4326', [minX, maxY]);
+                const tr = proj4(SRC, 'EPSG:4326', [maxX, maxY]);
+                const br = proj4(SRC, 'EPSG:4326', [maxX, minY]);
+                const bl = proj4(SRC, 'EPSG:4326', [minX, minY]);
+                map.addSource('cog-src', { type: 'image', url: canvas.toDataURL('image/png'), coordinates: [tl, tr, br, bl] });
+                // ABAIXO dos contornos das áreas, para a geometria ficar por cima
+                map.addLayer({ id: 'cog-lyr', type: 'raster', source: 'cog-src',
+                    paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } }, 'areas-line');
+                document.getElementById('remove-cog').style.display = 'block';
+                fitToGeometry(geom);
+                mapMsg(null);
+            } catch (e) {
+                console.error('[COG] leitura/recorte no cliente falhou:', e);
+                const msg = /fetch|network|CORS|Failed/i.test(String(e && e.message))
+                    ? 'Não foi possível ler o COG (o servidor da imagem precisa liberar CORS + range requests).'
+                    : ('Falha ao recortar o COG: ' + (e && e.message ? e.message : e));
+                mapMsg('<span class="err">' + msg + '</span>');
+                setTimeout(() => mapMsg(null), 5000);
+            }
+        }
+
+        // (Opcional) Fallback antigo via TiTiler — não usado por padrão, mantido como referência.
+        function showCogTiles(url) {
+            removeCog();
+            mapMsg('Carregando imagem (COG)… <span class="loader"></span>');
+            try {
+                const tjson = TILER + '/cog/WebMercatorQuad/tilejson.json?url=' + encodeURIComponent(url);
+                map.addSource('cog-src', { type: 'raster', url: tjson, tileSize: 512 });
+                map.addLayer({ id: 'cog-lyr', type: 'raster', source: 'cog-src', paint: { 'raster-opacity': 1 } }, 'areas-line');
+                document.getElementById('remove-cog').style.display = 'block';
+                const feat = state.areas && state.areas.features.find(f => f.properties.id === state.selectedAreaId);
+                if (feat) fitToGeometry(feat.geometry);
+                map.once('error', (ev) => {
+                    if (ev && ev.sourceId === 'cog-src') {
+                        mapMsg('<span class="err">Falha ao carregar tiles do COG (verifique o tile server / CORS).</span>');
+                        setTimeout(() => mapMsg(null), 4000);
+                    }
+                });
+                map.once('idle', () => mapMsg(null));
+                setTimeout(() => mapMsg(null), 8000);
+            } catch (e) {
+                console.error(e);
+                mapMsg('<span class="err">Falha ao carregar COG: ' + e.message + '</span>');
+                setTimeout(() => mapMsg(null), 3000);
+            }
+        }
+        function removeCog() {
+            if (map.getLayer('cog-lyr')) map.removeLayer('cog-lyr');
+            if (map.getSource('cog-src')) map.removeSource('cog-src');
+            const b = document.getElementById('remove-cog');
+            if (b) b.style.display = 'none';
+        }
+
+        // ── Controles ─────────────────────────────────────────────────────────────
+        document.getElementById('area-search').addEventListener('input', () => {
+            if (state.areas) renderAreaList(state.areas.features);
+        });
+        document.getElementById('f-cloud').addEventListener('input', (e) => {
+            document.getElementById('cloud-val').textContent = e.target.value;
+        });
+        document.getElementById('apply-filters').onclick = loadImages;
+        document.getElementById('clear-filters').onclick = () => {
+            document.getElementById('f-start').value = '';
+            document.getElementById('f-end').value = '';
+            document.getElementById('f-cloud').value = 100;
+            document.getElementById('cloud-val').textContent = '100';
+            loadImages();
+        };
+        document.getElementById('fit-areas').onclick = fitToAreas;
+        document.getElementById('view-on-map').onclick = () => {
+            const img = state.currentImage;
+            if (img) showCogOnMap(img.visualUrl);
+            document.getElementById('modal').classList.remove('open');
+        };
+        document.getElementById('remove-cog').onclick = removeCog;
+        document.getElementById('toggle-base').onclick = () => {
+            state.baseLayer = state.baseLayer === 'osm' ? 'satellite' : 'osm';
+            map.setLayoutProperty('osm', 'visibility', state.baseLayer === 'osm' ? 'visible' : 'none');
+            map.setLayoutProperty('satellite', 'visibility', state.baseLayer === 'satellite' ? 'visible' : 'none');
+            document.getElementById('toggle-base').textContent = state.baseLayer === 'osm' ? '🛰 Satélite' : '🗺 Mapa';
+        };
+        document.getElementById('meta-toggle').onclick = () => {
+            const pre = document.getElementById('modal-meta');
+            pre.classList.toggle('collapsed');
+            document.getElementById('meta-toggle').textContent = pre.classList.contains('collapsed') ? 'Expandir' : 'Recolher';
+        };
+        document.getElementById('meta-copy').onclick = async () => {
+            const raw = document.getElementById('modal-meta').dataset.raw || document.getElementById('modal-meta').textContent;
+            try { await navigator.clipboard.writeText(raw); document.getElementById('meta-copy').textContent = 'Copiado!'; setTimeout(() => document.getElementById('meta-copy').textContent = 'Copiar', 1200); }
+            catch (_) {}
+        };
+        document.getElementById('modal').addEventListener('click', (e) => {
+            if (e.target.id === 'modal') e.target.classList.remove('open');
+        });
+
+        // ── Geometria / bounds ────────────────────────────────────────────────────
+        function fitToAreas() {
+            if (!state.areas || !state.areas.features.length) return;
+            const b = boundsOfFeatures(state.areas.features);
+            if (b) map.fitBounds(b, { padding: 40, maxZoom: 14, duration: 600 });
+        }
+        function fitToGeometry(geom) {
+            const b = boundsOfGeometry(geom);
+            if (b) map.fitBounds(b, { padding: 60, maxZoom: 15, duration: 600 });
+        }
+        // Usa maplibregl.LngLatBounds (evita literais de array aninhado, que colidiriam
+        // com a sintaxe de inlining do Thymeleaf no template).
+        function boundsOfFeatures(features) {
+            const b = new maplibregl.LngLatBounds();
+            let any = false;
+            features.forEach(f => { if (collectCoords(f.geometry, b)) any = true; });
+            return any ? b : null;
+        }
+        function boundsOfGeometry(geom) {
+            const b = new maplibregl.LngLatBounds();
+            return collectCoords(geom, b) ? b : null;
+        }
+        function collectCoords(geom, b) {
+            if (!geom || !geom.coordinates) return false;
+            let found = false;
+            const walk = (c) => {
+                if (typeof c[0] === 'number') { b.extend(c); found = true; }
+                else c.forEach(walk);
+            };
+            walk(geom.coordinates);
+            return found;
+        }
+
+        // ── Utils ─────────────────────────────────────────────────────────────────
+        function kv(k, v) { return '<div class="kv"><span class="k">' + k + '</span><span>' + v + '</span></div>'; }
+        // Formata para dd/MM/YYYY (aceita 'YYYY-MM-DD' ou ISO completo).
+        function fmtDate(s) {
+            if (!s) return '';
+            const p = String(s).slice(0, 10).split('-');
+            return p.length === 3 ? (p[2] + '/' + p[1] + '/' + p[0]) : String(s);
+        }
+        // Tons claros: o texto do badge é preto, então o fundo precisa ser claro para legibilidade.
+        function cloudColor(c) {
+            if (c == null) return '#cfd8dc';
+            if (c <= 10) return '#8ce6b0'; if (c <= 30) return '#aee2a0';
+            if (c <= 60) return '#f2e08a'; return '#f0a48f';
+        }
+        function prettyJson(raw) {
+            if (!raw) return '—';
+            try { return JSON.stringify(JSON.parse(raw), null, 2); } catch (_) { return String(raw); }
+        }
+        function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+        // ── Boot ────────────────────────────────────────────────────────────────────
+        loadDashboard();
+        loadRecentImages();   // ao abrir, mostra as imagens mais recentes na timeline
+    </script>
+</body>
+</html>
