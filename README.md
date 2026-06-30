@@ -22,6 +22,8 @@ O host IS é responsável por:
 
 O Agent App **não** gerencia autenticação, não acessa o banco de dados do IS diretamente e não abre porta pública — tudo passa pelo host.
 
+> **Design e UX:** este README cobre o contrato técnico (empacotamento, manifest, datasource, build). Para a identidade visual e o padrão de interface que tornam um app coeso com o IS, veja **[design.md](design.md)**.
+
 ---
 
 ## Estrutura do projeto
@@ -730,4 +732,5 @@ Commite o `package-layout/` completo (exceto `plugin.jar` e `checksums.sha256`, 
 - [ ] `allows_own_user_store: false` e `allows_own_datasource: false` no manifest
 - [ ] `requires_host_authentication: true` e `requires_host_authorization: true`
 - [ ] Assets JS/CSS em `classpath:/static/` (sem CDN externo se `local_assets_only: true`)
+- [ ] UI segue a identidade visual do IS — ver checklist de design em **[design.md](design.md)**
 - [ ] Build limpo: `./scripts/build-all.sh` sem erros
