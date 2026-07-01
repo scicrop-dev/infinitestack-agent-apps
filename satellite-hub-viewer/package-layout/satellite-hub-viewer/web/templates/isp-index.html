@@ -217,6 +217,9 @@
     </div>
 
     <script th:src="@{${pluginAssetsPath} + '/maplibre-gl.js'}"></script>
+    <!-- Leitura/recorte do COG no próprio navegador (sem tile server externo). -->
+    <script th:src="@{${pluginAssetsPath} + '/geotiff.min.js'}"></script>
+    <script th:src="@{${pluginAssetsPath} + '/proj4.js'}"></script>
     <!-- Bloco inline minimo: injeta base-path e endpoint do tile server (COG). -->
     <script th:inline="javascript">
         window.__SAT__ = {
@@ -375,7 +378,9 @@
             const wrap = document.getElementById('area-detail-wrap');
             wrap.style.display = 'block';
             document.getElementById('area-detail').innerHTML =
-                kv('Nome', escapeHtml(p.name || '—')) +
+                kv('Fazenda', escapeHtml(p.farmName || '—')) +
+                kv('Talhão', escapeHtml(p.blockName || '—')) +
+                kv('Parcela', escapeHtml(p.parcelName || '—')) +
                 kv('ID', p.id) +
                 kv('Imagens', p.imageCount ?? 0) +
                 kv('Última imagem', fmtDate(p.lastImageDate) || '—') +
@@ -499,18 +504,106 @@
             if (c) c.onclick = () => document.getElementById('modal').classList.remove('open');
         }
 
-        // ── Sobreposição do COG (visual_url) no mapa, junto da geometria ───────────
-        // O COG Sentinel-2 está em projeção UTM nativa (ex.: EPSG:32722); o MapLibre só
-        // renderiza tiles em Web Mercator. Por isso usamos um tile server (TiTiler) que
-        // reprojeta o COG e serve tiles XYZ via TileJSON.
-        function showCogOnMap(url) {
+        // ── Sobreposição do COG (visual_url) inteiro no mapa ───────────────────────
+        // Sem tile server: o próprio navegador lê o COG (geotiff.js, via HTTP range).
+        // Carrega a imagem INTEIRA (sem recorte ao talhão), reprojeta os 4 cantos reais
+        // do COG (UTM→4326, via proj4) e a coloca como 'image source' nesse quad. O
+        // basemap fica visível ao redor e a geometria do talhão por cima.
+        const MAX_COG_PX = 2048;  // maior dimensão renderizada (usa overviews do COG)
+
+        // Define no proj4 a CRS de origem do COG a partir do código EPSG e devolve o nome.
+        function cogSourceCrs(epsg) {
+            if (!epsg || epsg === 4326) return 'EPSG:4326';
+            if (epsg === 3857 || epsg === 900913) return 'EPSG:3857';
+            const name = 'EPSG:' + epsg;
+            if (!proj4.defs(name)) {
+                if (epsg >= 32601 && epsg <= 32660) {
+                    proj4.defs(name, '+proj=utm +zone=' + (epsg - 32600) + ' +datum=WGS84 +units=m +no_defs');
+                } else if (epsg >= 32701 && epsg <= 32760) {
+                    proj4.defs(name, '+proj=utm +zone=' + (epsg - 32700) + ' +south +datum=WGS84 +units=m +no_defs');
+                } else {
+                    throw new Error('CRS do COG não suportada no cliente: ' + name);
+                }
+            }
+            return name;
+        }
+
+        async function showCogOnMap(url) {
             if (!url) { mapMsg('<span class="err">Esta imagem não possui COG (visual_url).</span>'); setTimeout(() => mapMsg(null), 2500); return; }
+            removeCog();
+
+            mapMsg('Carregando imagem inteira (COG)… <span class="loader"></span>');
+            try {
+                const tiff = await GeoTIFF.fromUrl(url);
+                const image = await tiff.getImage();
+                const gk = image.getGeoKeys() || {};
+                const epsg = gk.ProjectedCSTypeGeoKey || gk.GeographicTypeGeoKey || 4326;
+                const SRC = cogSourceCrs(epsg);
+
+                // bbox e dimensões nativas do COG inteiro (CRS de origem)
+                const imgBox = image.getBoundingBox(); // [minX,minY,maxX,maxY]
+                const minX = imgBox[0], minY = imgBox[1], maxX = imgBox[2], maxY = imgBox[3];
+                const iw = image.getWidth(), ih = image.getHeight();
+
+                // renderiza a imagem inteira, usando overviews (máx MAX_COG_PX no maior lado)
+                const scale = Math.min(1, MAX_COG_PX / Math.max(iw, ih));
+                const W = Math.max(1, Math.round(iw * scale));
+                const H = Math.max(1, Math.round(ih * scale));
+
+                const samples = image.getSamplesPerPixel();
+                const data = await image.readRasters({ width: W, height: H, interleave: true });
+
+                // monta RGBA no canvas (visual COG = 3 bandas RGB 8-bit; trata 1 e 4 bandas)
+                const canvas = document.createElement('canvas');
+                canvas.width = W; canvas.height = H;
+                const ctx = canvas.getContext('2d');
+                const imgData = ctx.createImageData(W, H);
+                const px = imgData.data;
+                for (let i = 0, p = 0; i < W * H; i++, p += 4) {
+                    const s = i * samples;
+                    if (samples >= 3) { px[p] = data[s]; px[p + 1] = data[s + 1]; px[p + 2] = data[s + 2]; }
+                    else { const g = data[s]; px[p] = g; px[p + 1] = g; px[p + 2] = g; }
+                    px[p + 3] = 255;
+                }
+                ctx.putImageData(imgData, 0, 0);
+
+                // 4 cantos reais do COG (UTM) reprojetados para 4326 — quad exato no mapa
+                const tl = proj4(SRC, 'EPSG:4326', [minX, maxY]);
+                const tr = proj4(SRC, 'EPSG:4326', [maxX, maxY]);
+                const br = proj4(SRC, 'EPSG:4326', [maxX, minY]);
+                const bl = proj4(SRC, 'EPSG:4326', [minX, minY]);
+                map.addSource('cog-src', { type: 'image', url: canvas.toDataURL('image/png'), coordinates: [tl, tr, br, bl] });
+                // ABAIXO dos contornos das áreas, para a geometria ficar por cima
+                map.addLayer({ id: 'cog-lyr', type: 'raster', source: 'cog-src',
+                    paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } }, 'areas-line');
+                document.getElementById('remove-cog').style.display = 'block';
+
+                // enquadra ao talhão selecionado, se houver; senão, ao COG inteiro
+                const feat = state.areas && state.areas.features.find(f => f.properties.id === state.selectedAreaId);
+                if (feat && feat.geometry) fitToGeometry(feat.geometry);
+                else {
+                    const sw = [Math.min(tl[0], bl[0]), Math.min(bl[1], br[1])];
+                    const ne = [Math.max(tr[0], br[0]), Math.max(tl[1], tr[1])];
+                    map.fitBounds([sw, ne], { padding: 40 });
+                }
+                mapMsg(null);
+            } catch (e) {
+                console.error('[COG] leitura no cliente falhou:', e);
+                const msg = /fetch|network|CORS|Failed/i.test(String(e && e.message))
+                    ? 'Não foi possível ler o COG (o servidor da imagem precisa liberar CORS + range requests).'
+                    : ('Falha ao carregar o COG: ' + (e && e.message ? e.message : e));
+                mapMsg('<span class="err">' + msg + '</span>');
+                setTimeout(() => mapMsg(null), 5000);
+            }
+        }
+
+        // (Opcional) Fallback antigo via TiTiler — não usado por padrão, mantido como referência.
+        function showCogTiles(url) {
             removeCog();
             mapMsg('Carregando imagem (COG)… <span class="loader"></span>');
             try {
                 const tjson = TILER + '/cog/WebMercatorQuad/tilejson.json?url=' + encodeURIComponent(url);
                 map.addSource('cog-src', { type: 'raster', url: tjson, tileSize: 512 });
-                // insere a camada raster ABAIXO dos contornos das áreas, para a geometria ficar por cima
                 map.addLayer({ id: 'cog-lyr', type: 'raster', source: 'cog-src', paint: { 'raster-opacity': 1 } }, 'areas-line');
                 document.getElementById('remove-cog').style.display = 'block';
                 const feat = state.areas && state.areas.features.find(f => f.properties.id === state.selectedAreaId);

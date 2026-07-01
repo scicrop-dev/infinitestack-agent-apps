@@ -17,6 +17,8 @@ cp "$PLUGIN_ROOT/src/main/resources/templates/isp-status.html" "$LAYOUT_ROOT/web
 mkdir -p "$LAYOUT_ROOT/web/static"
 cp "$PLUGIN_ROOT/src/main/resources/static/maplibre-gl.js"   "$LAYOUT_ROOT/web/static/"
 cp "$PLUGIN_ROOT/src/main/resources/static/maplibre-gl.css"  "$LAYOUT_ROOT/web/static/"
+cp "$PLUGIN_ROOT/src/main/resources/static/geotiff.min.js"   "$LAYOUT_ROOT/web/static/"
+cp "$PLUGIN_ROOT/src/main/resources/static/proj4.js"         "$LAYOUT_ROOT/web/static/"
 
 rm -rf "$BUILD_DIR/staging"
 mkdir -p "$BUILD_DIR/staging"
@@ -35,6 +37,8 @@ echo "[step2] Refreshing checksums.sha256..."
     web/templates/isp-status.html \
     web/static/maplibre-gl.js \
     web/static/maplibre-gl.css \
+    web/static/geotiff.min.js \
+    web/static/proj4.js \
     > checksums.sha256
 )
 echo "[step2] Staged at $STAGING_DIR"

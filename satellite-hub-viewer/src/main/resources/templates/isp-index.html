@@ -504,13 +504,12 @@
             if (c) c.onclick = () => document.getElementById('modal').classList.remove('open');
         }
 
-        // ── Sobreposição do COG (visual_url) no mapa, recortado ao talhão ──────────
-        // Sem tile server: o próprio navegador lê o COG (geotiff.js, via HTTP range),
-        // recorta apenas a janela que cobre o polígono, reprojeta os cantos UTM→4326
-        // (proj4) e mascara tudo fora do talhão num <canvas>. O resultado entra como
-        // 'image source' nos 4 cantos reais da janela — só a porção dentro do talhão
-        // aparece, com o basemap visível ao redor. Nenhum dado é baixado fora da área.
-        const MAX_COG_PX = 1024;  // maior dimensão do recorte renderizado
+        // ── Sobreposição do COG (visual_url) inteiro no mapa ───────────────────────
+        // Sem tile server: o próprio navegador lê o COG (geotiff.js, via HTTP range).
+        // Carrega a imagem INTEIRA (sem recorte ao talhão), reprojeta os 4 cantos reais
+        // do COG (UTM→4326, via proj4) e a coloca como 'image source' nesse quad. O
+        // basemap fica visível ao redor e a geometria do talhão por cima.
+        const MAX_COG_PX = 2048;  // maior dimensão renderizada (usa overviews do COG)
 
         // Define no proj4 a CRS de origem do COG a partir do código EPSG e devolve o nome.
         function cogSourceCrs(epsg) {
@@ -529,24 +528,11 @@
             return name;
         }
 
-        // Lista plana de anéis (lng/lat) de um Polygon/MultiPolygon.
-        function polygonRings(geom) {
-            const rings = [];
-            if (!geom) return rings;
-            if (geom.type === 'Polygon') geom.coordinates.forEach(r => rings.push(r));
-            else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => p.forEach(r => rings.push(r)));
-            return rings;
-        }
-
         async function showCogOnMap(url) {
             if (!url) { mapMsg('<span class="err">Esta imagem não possui COG (visual_url).</span>'); setTimeout(() => mapMsg(null), 2500); return; }
             removeCog();
-            const feat = state.areas && state.areas.features.find(f => f.properties.id === state.selectedAreaId);
-            const geom = feat && feat.geometry;
-            const b = geom && boundsOfGeometry(geom);
-            if (!b) { mapMsg('<span class="err">Área sem geometria para recortar.</span>'); setTimeout(() => mapMsg(null), 2500); return; }
 
-            mapMsg('Lendo e recortando imagem ao talhão… <span class="loader"></span>');
+            mapMsg('Carregando imagem inteira (COG)… <span class="loader"></span>');
             try {
                 const tiff = await GeoTIFF.fromUrl(url);
                 const image = await tiff.getImage();
@@ -554,24 +540,18 @@
                 const epsg = gk.ProjectedCSTypeGeoKey || gk.GeographicTypeGeoKey || 4326;
                 const SRC = cogSourceCrs(epsg);
 
-                // bbox do polígono (4326) → CRS do COG, recortado aos limites reais do COG
-                const imgBox = image.getBoundingBox(); // [minX,minY,maxX,maxY] na CRS do COG
-                const c1 = proj4('EPSG:4326', SRC, [b.getWest(), b.getSouth()]);
-                const c2 = proj4('EPSG:4326', SRC, [b.getEast(), b.getNorth()]);
-                let minX = Math.max(Math.min(c1[0], c2[0]), imgBox[0]);
-                let minY = Math.max(Math.min(c1[1], c2[1]), imgBox[1]);
-                let maxX = Math.min(Math.max(c1[0], c2[0]), imgBox[2]);
-                let maxY = Math.min(Math.max(c1[1], c2[1]), imgBox[3]);
-                if (!(maxX > minX && maxY > minY)) throw new Error('polígono fora da cobertura do COG');
+                // bbox e dimensões nativas do COG inteiro (CRS de origem)
+                const imgBox = image.getBoundingBox(); // [minX,minY,maxX,maxY]
+                const minX = imgBox[0], minY = imgBox[1], maxX = imgBox[2], maxY = imgBox[3];
+                const iw = image.getWidth(), ih = image.getHeight();
 
-                // dimensões do recorte (preserva proporção, no máximo MAX_COG_PX no maior lado)
-                const wMeters = maxX - minX, hMeters = maxY - minY;
-                const scale = MAX_COG_PX / Math.max(wMeters, hMeters);
-                const W = Math.max(1, Math.round(wMeters * scale));
-                const H = Math.max(1, Math.round(hMeters * scale));
+                // renderiza a imagem inteira, usando overviews (máx MAX_COG_PX no maior lado)
+                const scale = Math.min(1, MAX_COG_PX / Math.max(iw, ih));
+                const W = Math.max(1, Math.round(iw * scale));
+                const H = Math.max(1, Math.round(ih * scale));
 
                 const samples = image.getSamplesPerPixel();
-                const data = await image.readRasters({ bbox: [minX, minY, maxX, maxY], width: W, height: H, interleave: true });
+                const data = await image.readRasters({ width: W, height: H, interleave: true });
 
                 // monta RGBA no canvas (visual COG = 3 bandas RGB 8-bit; trata 1 e 4 bandas)
                 const canvas = document.createElement('canvas');
@@ -587,22 +567,7 @@
                 }
                 ctx.putImageData(imgData, 0, 0);
 
-                // máscara: mantém só os pixels dentro do polígono (destination-in)
-                ctx.globalCompositeOperation = 'destination-in';
-                ctx.beginPath();
-                polygonRings(geom).forEach(ring => {
-                    ring.forEach((pt, idx) => {
-                        const xy = proj4('EPSG:4326', SRC, [pt[0], pt[1]]);
-                        const cx = (xy[0] - minX) / wMeters * W;
-                        const cy = (maxY - xy[1]) / hMeters * H;
-                        if (idx === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
-                    });
-                    ctx.closePath();
-                });
-                ctx.fill();
-                ctx.globalCompositeOperation = 'source-over';
-
-                // 4 cantos reais da janela (UTM) reprojetados para 4326 — quad exato no mapa
+                // 4 cantos reais do COG (UTM) reprojetados para 4326 — quad exato no mapa
                 const tl = proj4(SRC, 'EPSG:4326', [minX, maxY]);
                 const tr = proj4(SRC, 'EPSG:4326', [maxX, maxY]);
                 const br = proj4(SRC, 'EPSG:4326', [maxX, minY]);
@@ -612,13 +577,21 @@
                 map.addLayer({ id: 'cog-lyr', type: 'raster', source: 'cog-src',
                     paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } }, 'areas-line');
                 document.getElementById('remove-cog').style.display = 'block';
-                fitToGeometry(geom);
+
+                // enquadra ao talhão selecionado, se houver; senão, ao COG inteiro
+                const feat = state.areas && state.areas.features.find(f => f.properties.id === state.selectedAreaId);
+                if (feat && feat.geometry) fitToGeometry(feat.geometry);
+                else {
+                    const sw = [Math.min(tl[0], bl[0]), Math.min(bl[1], br[1])];
+                    const ne = [Math.max(tr[0], br[0]), Math.max(tl[1], tr[1])];
+                    map.fitBounds([sw, ne], { padding: 40 });
+                }
                 mapMsg(null);
             } catch (e) {
-                console.error('[COG] leitura/recorte no cliente falhou:', e);
+                console.error('[COG] leitura no cliente falhou:', e);
                 const msg = /fetch|network|CORS|Failed/i.test(String(e && e.message))
                     ? 'Não foi possível ler o COG (o servidor da imagem precisa liberar CORS + range requests).'
-                    : ('Falha ao recortar o COG: ' + (e && e.message ? e.message : e));
+                    : ('Falha ao carregar o COG: ' + (e && e.message ? e.message : e));
                 mapMsg('<span class="err">' + msg + '</span>');
                 setTimeout(() => mapMsg(null), 5000);
             }
