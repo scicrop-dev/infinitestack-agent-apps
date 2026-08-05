@@ -1,0 +1,22 @@
+{
+  "plugin_id": "chatbot-workflow-manager",
+  "name": "Chatbot Workflow Manager",
+  "version": "1.1.0",
+  "description": "Conversational Workflow Engine: fluxos conversacionais stateful e agnósticos de canal, com nós Message, Input, IF, SetVariable, End, CallWorkflow, DbQuery e HttpRequest, linguagem de expressões, editor JSON validado, documentação dos blocos na tela e chat de teste.",
+  "entrypoint": "com.infinitestack.chatbotworkflow.Application",
+  "base_path": "/api/plugins/chatbot-workflow-manager",
+  "supported_destination_databases": [
+    "postgres"
+  ],
+  "requires_host_authentication": true,
+  "requires_host_authorization": true,
+  "requires_host_datasource": true,
+  "allows_own_user_store": false,
+  "allows_own_datasource": false,
+  "web": {
+    "templates_path": "templates",
+    "static_path": "static",
+    "thymeleaf": true,
+    "local_assets_only": true
+  }
+}
