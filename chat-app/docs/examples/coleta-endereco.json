@@ -1,0 +1,42 @@
+{
+  "id": "coleta-endereco",
+  "name": "Coleta de endereço (subfluxo)",
+  "start": "pergunta-cep",
+  "nodes": [
+    {
+      "id": "pergunta-cep",
+      "type": "INPUT",
+      "next": "valida-cep",
+      "config": {
+        "prompt": "Olá {{nome}}, qual é o seu CEP? (só números)",
+        "variable": "cep"
+      }
+    },
+    {
+      "id": "valida-cep",
+      "type": "IF",
+      "config": {
+        "expression": "isNumber(cep) && len(cep) == 8",
+        "then": "pergunta-cidade",
+        "else": "cep-invalido"
+      }
+    },
+    {
+      "id": "cep-invalido",
+      "type": "MESSAGE",
+      "next": "pergunta-cep",
+      "config": { "text": "CEP inválido — preciso de 8 dígitos, sem traço." }
+    },
+    {
+      "id": "pergunta-cidade",
+      "type": "INPUT",
+      "next": "fim",
+      "config": { "prompt": "E qual é a cidade?", "variable": "cidade" }
+    },
+    {
+      "id": "fim",
+      "type": "END",
+      "config": {}
+    }
+  ]
+}

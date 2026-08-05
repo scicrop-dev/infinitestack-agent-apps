@@ -1,0 +1,54 @@
+{
+  "id": "simple-menu",
+  "name": "Menu simples",
+  "start": "menu",
+  "nodes": [
+    {
+      "id": "menu",
+      "type": "INPUT",
+      "next": "roteia",
+      "config": {
+        "prompt": "Escolha uma opção:\n1 - Suporte\n2 - Comercial",
+        "variable": "opcao"
+      }
+    },
+    {
+      "id": "roteia",
+      "type": "IF",
+      "config": {
+        "variable": "opcao",
+        "operator": "eq",
+        "value": "1",
+        "then": "suporte",
+        "else": "roteia-comercial"
+      }
+    },
+    {
+      "id": "roteia-comercial",
+      "type": "IF",
+      "config": {
+        "variable": "opcao",
+        "operator": "eq",
+        "value": "2",
+        "then": "comercial",
+        "else": "invalida"
+      }
+    },
+    {
+      "id": "invalida",
+      "type": "MESSAGE",
+      "next": "menu",
+      "config": { "text": "Opção inválida." }
+    },
+    {
+      "id": "suporte",
+      "type": "END",
+      "config": { "text": "Encaminhando para o suporte." }
+    },
+    {
+      "id": "comercial",
+      "type": "END",
+      "config": { "text": "Encaminhando para o comercial." }
+    }
+  ]
+}

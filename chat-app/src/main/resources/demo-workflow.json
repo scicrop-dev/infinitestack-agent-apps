@@ -1,0 +1,143 @@
+{
+  "id": "atendimento-demo",
+  "name": "Atendimento — Demo",
+  "start": "boas-vindas",
+  "nodes": [
+    {
+      "id": "boas-vindas",
+      "type": "MESSAGE",
+      "next": "pergunta-nome",
+      "config": {
+        "text": "Olá! Sou o atendimento automático do InfiniteStack."
+      }
+    },
+    {
+      "id": "pergunta-nome",
+      "type": "INPUT",
+      "next": "saudacao",
+      "config": {
+        "prompt": "Para começar, qual é o seu nome?",
+        "variable": "nome"
+      }
+    },
+    {
+      "id": "saudacao",
+      "type": "MESSAGE",
+      "next": "menu",
+      "config": {
+        "text": "Prazer, {{nome}}!"
+      }
+    },
+    {
+      "id": "menu",
+      "type": "INPUT",
+      "next": "roteia-menu",
+      "config": {
+        "prompt": "Como posso ajudar?\n1 - Consultar status\n2 - Falar com um atendente\n3 - Encerrar",
+        "variable": "opcao"
+      }
+    },
+    {
+      "id": "roteia-menu",
+      "type": "IF",
+      "config": {
+        "variable": "opcao",
+        "operator": "eq",
+        "value": "1",
+        "then": "status",
+        "else": "roteia-atendente"
+      }
+    },
+    {
+      "id": "roteia-atendente",
+      "type": "IF",
+      "config": {
+        "variable": "opcao",
+        "operator": "eq",
+        "value": "2",
+        "then": "atendente",
+        "else": "roteia-encerrar"
+      }
+    },
+    {
+      "id": "roteia-encerrar",
+      "type": "IF",
+      "config": {
+        "variable": "opcao",
+        "operator": "eq",
+        "value": "3",
+        "then": "fim",
+        "else": "opcao-invalida"
+      }
+    },
+    {
+      "id": "opcao-invalida",
+      "type": "MESSAGE",
+      "next": "menu",
+      "config": {
+        "text": "Não entendi a opção \"{{opcao}}\". Vamos tentar de novo."
+      }
+    },
+    {
+      "id": "status",
+      "type": "SET_VARIABLE",
+      "next": "mostra-status",
+      "config": {
+        "variable": "assunto",
+        "value": "consulta de status"
+      }
+    },
+    {
+      "id": "mostra-status",
+      "type": "MESSAGE",
+      "next": "mais-alguma-coisa",
+      "config": {
+        "text": "Registrei sua {{assunto}}, {{nome}}. Todos os serviços estão operacionais."
+      }
+    },
+    {
+      "id": "atendente",
+      "type": "SET_VARIABLE",
+      "next": "mostra-atendente",
+      "config": {
+        "variable": "assunto",
+        "value": "transferência para atendente"
+      }
+    },
+    {
+      "id": "mostra-atendente",
+      "type": "MESSAGE",
+      "next": "mais-alguma-coisa",
+      "config": {
+        "text": "Certo, {{nome}} — anotei a {{assunto}}. Um atendente humano assume a conversa em instantes."
+      }
+    },
+    {
+      "id": "mais-alguma-coisa",
+      "type": "INPUT",
+      "next": "roteia-continuar",
+      "config": {
+        "prompt": "Posso ajudar em mais alguma coisa? (sim/não)",
+        "variable": "continuar"
+      }
+    },
+    {
+      "id": "roteia-continuar",
+      "type": "IF",
+      "config": {
+        "variable": "continuar",
+        "operator": "eq",
+        "value": "sim",
+        "then": "menu",
+        "else": "fim"
+      }
+    },
+    {
+      "id": "fim",
+      "type": "END",
+      "config": {
+        "text": "Obrigado pelo contato, {{nome}}. Até logo!"
+      }
+    }
+  ]
+}

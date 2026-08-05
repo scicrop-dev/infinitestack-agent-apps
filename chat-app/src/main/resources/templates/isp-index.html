@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat App</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0d0d0d;
+            --surface: #161616;
+            --surface2: #1e1e1e;
+            --border: #2a2a2a;
+            --text: #e8e8e8;
+            --muted: #6b6b6b;
+            --accent: #4ade80;
+            --accent2: #60a5fa;
+            --danger: #f87171;
+            --warn: #facc15;
+            --radius: 8px;
+            --font: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+            --mono: 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 14px;
+            line-height: 1.5;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── HEADER ─────────────────────────────────────────── */
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+        header .badge {
+            font-size: 11px;
+            background: #1a2e1a;
+            color: var(--accent);
+            border: 1px solid #2d4a2d;
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+        #plugin-status {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+        .dot.ready  { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+        .dot.error  { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+
+        /* ── LAYOUT ─────────────────────────────────────────── */
+        .layout {
+            display: grid;
+            grid-template-columns: 240px 1fr 380px;
+            height: calc(100vh - 53px);
+            overflow: hidden;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        /* ── COLUNA 1: FLUXOS ───────────────────────────────── */
+        .flows-panel {
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 18px 14px;
+        }
+        .flows-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+        .flow-item {
+            padding: 9px 10px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            margin-bottom: 4px;
+            transition: background 0.12s, border-color 0.12s;
+        }
+        .flow-item:hover { background: var(--surface2); }
+        .flow-item.active { background: var(--surface2); border-color: var(--accent2); }
+        .flow-item .name { font-size: 13px; display: block; }
+        .flow-item .id { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+        .empty-hint { font-size: 12px; color: var(--muted); padding: 10px 2px; }
+
+        /* ── COLUNA 2: EDITOR / DOCUMENTAÇÃO ────────────────── */
+        .editor-panel {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            overflow: hidden;
+            background: var(--bg);
+        }
+        .editor-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            border-bottom: 1px solid var(--border);
+        }
+        .editor-toolbar .spacer { margin-left: auto; }
+        .tabs { display: flex; gap: 4px; }
+        .tab {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--muted);
+            font-family: var(--font);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 5px 11px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--text); background: var(--surface2); border-color: var(--border); }
+        #editor-subject { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+        #editor {
+            width: 100%;
+            height: 100%;
+            resize: none;
+            background: var(--surface2);
+            border: none;
+            border-left: 1px solid var(--border);
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 12.5px;
+            line-height: 1.6;
+            padding: 16px 18px;
+            outline: none;
+            tab-size: 2;
+        }
+        #issues {
+            border-top: 1px solid var(--border);
+            padding: 10px 18px;
+            max-height: 30vh;
+            overflow-y: auto;
+            background: var(--surface);
+            display: none;
+        }
+        #issues.visible { display: block; }
+        .issue {
+            font-size: 12px;
+            font-family: var(--mono);
+            padding: 4px 0 4px 12px;
+            border-left: 2px solid var(--border);
+            margin-bottom: 3px;
+        }
+        .issue.error   { border-left-color: var(--danger); color: #fca5a5; }
+        .issue.warning { border-left-color: var(--warn);   color: #fde68a; }
+        .issue.ok      { border-left-color: var(--accent); color: #86efac; }
+
+        /* ── DOCUMENTAÇÃO NA TELA ───────────────────────────── */
+        #docs {
+            display: none;
+            overflow-y: auto;
+            padding: 18px 22px 40px;
+            background: var(--surface2);
+            border-left: 1px solid var(--border);
+        }
+        #docs.visible { display: block; }
+        .docs-intro { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; max-width: 780px; }
+        .docs-index { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 22px; }
+        .index-chip {
+            font-size: 10.5px;
+            font-family: var(--mono);
+            padding: 3px 9px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--muted);
+            cursor: pointer;
+        }
+        .index-chip:hover { color: var(--accent); border-color: #2d4a2d; }
+
+        .doc-block {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 18px;
+            margin-bottom: 14px;
+            scroll-margin-top: 10px;
+        }
+        .doc-block h3 {
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin-bottom: 4px;
+        }
+        .doc-type {
+            font-family: var(--mono);
+            font-size: 10.5px;
+            color: var(--accent);
+            background: #12210f;
+            border: 1px solid #2d4a2d;
+            padding: 2px 7px;
+            border-radius: 5px;
+            letter-spacing: 0.02em;
+        }
+        .doc-type.effect { color: var(--warn); background: #211d0f; border-color: #4a412d; }
+        .doc-summary { font-size: 12.5px; color: var(--text); margin-bottom: 8px; }
+        .doc-why {
+            font-size: 12px;
+            color: var(--muted);
+            border-left: 2px solid var(--border);
+            padding-left: 10px;
+            margin-bottom: 12px;
+        }
+        .doc-block table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+        .doc-block th {
+            text-align: left;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: var(--muted);
+            padding: 4px 8px 4px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .doc-block td {
+            font-size: 12px;
+            padding: 5px 8px 5px 0;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        .doc-block td.field { font-family: var(--mono); color: var(--accent2); white-space: nowrap; }
+        .doc-block td.req   { font-size: 11px; color: var(--muted); white-space: nowrap; }
+        .doc-block td.req.yes { color: var(--text); }
+        .doc-block pre {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 11px 13px;
+            font-family: var(--mono);
+            font-size: 11.5px;
+            line-height: 1.55;
+            overflow-x: auto;
+            margin-bottom: 10px;
+            white-space: pre;
+        }
+        .doc-actions { display: flex; align-items: center; gap: 8px; }
+        .doc-note { font-size: 11.5px; color: var(--muted); }
+        code {
+            font-family: var(--mono);
+            font-size: 11.5px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 5px;
+        }
+
+        /* ── COLUNA 3: CHAT ─────────────────────────────────── */
+        .chat-panel {
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+            display: grid;
+            grid-template-rows: auto 1fr auto auto;
+            overflow: hidden;
+        }
+        .chat-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .chat-head .spacer { margin-left: auto; }
+        #messages {
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .bubble {
+            max-width: 88%;
+            padding: 8px 11px;
+            border-radius: 10px;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .bubble.bot  { background: var(--surface2); border: 1px solid var(--border); align-self: flex-start; }
+        .bubble.user { background: #1a2e1a; border: 1px solid #2d4a2d; align-self: flex-end; }
+        .placeholder {
+            margin: auto;
+            text-align: center;
+            color: var(--muted);
+            font-size: 12px;
+            max-width: 220px;
+            opacity: 0.8;
+        }
+        .placeholder svg { opacity: 0.25; margin-bottom: 10px; }
+
+        #vars {
+            border-top: 1px solid var(--border);
+            padding: 8px 16px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--muted);
+            max-height: 96px;
+            overflow-y: auto;
+            display: none;
+        }
+        #vars.visible { display: block; }
+        #vars .vk { color: var(--accent2); }
+
+        .composer {
+            border-top: 1px solid var(--border);
+            padding: 12px 16px;
+            display: flex;
+            gap: 8px;
+        }
+        .composer input { flex: 1; }
+
+        /* ── CONTROLES ──────────────────────────────────────── */
+        input, select, textarea {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-family: var(--font);
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        input:focus, select:focus { border-color: var(--accent); }
+        #editor:focus { border-left-color: var(--accent); }
+
+        .btn {
+            padding: 8px 14px;
+            background: var(--accent);
+            color: #0d1a0d;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+            transition: opacity 0.12s;
+        }
+        .btn:hover:not(:disabled) { opacity: 0.88; }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .btn.secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+        .btn.danger { background: var(--surface2); color: var(--danger); border: 1px solid var(--border); }
+        .btn.small { padding: 5px 10px; font-size: 11px; }
+
+        .chip {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            color: var(--muted);
+            letter-spacing: 0.04em;
+        }
+        .chip.waiting  { color: var(--accent2); border-color: #1e3a5f; background: #101d2e; }
+        .chip.finished { color: var(--accent);  border-color: #2d4a2d; background: #1a2e1a; }
+        .chip.error    { color: var(--danger);  border-color: #4a2d2d; background: #2e1a1a; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Chat App</h1>
+    <span class="badge">v1.1</span>
+    <div id="plugin-status"><span class="dot" id="status-dot"></span><span id="status-text">verificando…</span></div>
+</header>
+
+<div class="layout">
+
+    <!-- ── FLUXOS ─────────────────────────────────────────── -->
+    <aside class="flows-panel">
+        <div class="flows-head">
+            <span class="section-title">Fluxos</span>
+            <button class="btn secondary small" id="btn-new">+ Novo</button>
+        </div>
+        <div id="flow-list"><div class="empty-hint">Carregando…</div></div>
+    </aside>
+
+    <!-- ── EDITOR / DOCUMENTAÇÃO ──────────────────────────── -->
+    <main class="editor-panel">
+        <div class="editor-toolbar">
+            <div class="tabs">
+                <button class="tab active" id="tab-editor">Definição</button>
+                <button class="tab" id="tab-docs">Blocos</button>
+            </div>
+            <span id="editor-subject"></span>
+            <span class="spacer"></span>
+            <button class="btn secondary small" id="btn-validate">Validar</button>
+            <button class="btn small" id="btn-save">Salvar</button>
+            <button class="btn danger small" id="btn-delete">Excluir</button>
+        </div>
+
+        <textarea id="editor" spellcheck="false"
+                  placeholder="Selecione um fluxo à esquerda, clique em + Novo, ou abra a aba Blocos para montar o fluxo a partir da documentação."></textarea>
+
+        <div id="docs"></div>
+
+        <div id="issues"></div>
+    </main>
+
+    <!-- ── CHAT DE TESTE ──────────────────────────────────── -->
+    <aside class="chat-panel">
+        <div class="chat-head">
+            <span class="section-title">Chat de teste</span>
+            <span class="chip" id="conv-status">sem conversa</span>
+            <span class="spacer"></span>
+            <button class="btn secondary small" id="btn-restart">Reiniciar</button>
+        </div>
+        <div id="messages">
+            <div class="placeholder">
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                </svg>
+                <div>Selecione um fluxo e clique em <strong>Reiniciar</strong> para executá-lo.</div>
+            </div>
+        </div>
+        <div id="vars"></div>
+        <div class="composer">
+            <input type="text" id="chat-input" placeholder="Digite uma mensagem…" disabled>
+            <button class="btn" id="btn-send" disabled>Enviar</button>
+        </div>
+    </aside>
+
+</div>
+
+<script th:inline="javascript">
+    const BASE = /*[[${pluginBasePath}]]*/ '/api/plugins/chat-app';
+
+    let selectedId = null;      // fluxo aberto no editor
+    let conversationId = null;  // conversa em execução no chat de teste
+
+    const $ = id => document.getElementById(id);
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       REFERÊNCIA DOS BLOCOS — é a fonte da aba "Blocos".
+       Cada entrada descreve o que o bloco faz, por que ele é assim, os campos de
+       config e um exemplo pronto para inserir no fluxo aberto.
+       ══════════════════════════════════════════════════════════════════════════ */
+    const BLOCKS = [
+        {
+            type: 'MESSAGE',
+            title: 'Enviar mensagem',
+            summary: 'Envia um texto ao usuário e segue para o próximo nó, sem esperar resposta.',
+            why: 'É o único bloco que fala sem perguntar. Use vários seguidos para quebrar um texto longo em mensagens curtas — no WhatsApp isso lê muito melhor que um parágrafo único.',
+            fields: [
+                ['text', true, 'Texto a enviar. Aceita {{variavel}}.'],
+                ['next', true, 'Id do próximo nó.']
+            ],
+            example: {
+                id: 'saudacao', type: 'MESSAGE', next: 'menu',
+                config: { text: 'Prazer, {{nome}}!' }
+            }
+        },
+        {
+            type: 'INPUT',
+            title: 'Perguntar e esperar',
+            summary: 'Pergunta algo, pausa a conversa e grava a próxima mensagem do usuário numa variável.',
+            why: 'É o único bloco que interrompe o turno. A conversa fica em WAITING_INPUT no banco e retoma exatamente daqui quando a resposta chegar — mesmo que seja meia hora depois, ou depois de o plugin reiniciar.',
+            fields: [
+                ['variable', true, 'Nome da variável que recebe a resposta (já com espaços das pontas removidos).'],
+                ['prompt', false, 'Pergunta a enviar antes de pausar. Omita quando um MESSAGE anterior já perguntou — texto vazio viraria uma mensagem em branco no canal.'],
+                ['next', true, 'Id do nó que roda depois da resposta.']
+            ],
+            example: {
+                id: 'pergunta-nome', type: 'INPUT', next: 'saudacao',
+                config: { prompt: 'Qual é o seu nome?', variable: 'nome' }
+            }
+        },
+        {
+            type: 'IF',
+            title: 'Ramificar',
+            summary: 'Avalia uma condição e desvia para o ramo then ou else.',
+            why: 'Não usa next: os dois destinos são then e else, e ambos são obrigatórios. Se o ramo escolhido não existir, a conversa vai para ERROR em vez de seguir em frente — um else esquecido não pode passar despercebido até acontecer a conversa errada.',
+            fields: [
+                ['variable', false, 'Variável do lado esquerdo (forma simples).'],
+                ['operator', false, 'Padrão eq. Ver a tabela de operadores abaixo.'],
+                ['value', false, 'Lado direito. Aceita {{variavel}}.'],
+                ['expression', false, 'Alternativa às três acima: uma expressão completa. Não use junto com variable.'],
+                ['then', true, 'Nó quando a condição é verdadeira.'],
+                ['else', true, 'Nó quando é falsa.']
+            ],
+            example: {
+                id: 'roteia', type: 'IF',
+                config: { variable: 'opcao', operator: 'eq', value: '1', then: 'consulta', else: 'invalida' }
+            }
+        },
+        {
+            type: 'SET_VARIABLE',
+            title: 'Atribuir variável',
+            summary: 'Grava um valor numa variável e segue.',
+            why: 'Serve para normalizar entrada, montar texto composto ou guardar um resultado intermediário. Use value para texto simples e expression para cálculo — declarar os dois no mesmo nó é erro, porque preferir um silenciosamente faria você depurar por que o outro "não funciona".',
+            fields: [
+                ['variable', true, 'Nome da variável.'],
+                ['value', false, 'Valor textual. Aceita {{variavel}}.'],
+                ['expression', false, 'Alternativa a value: expressão avaliada. Ver a seção Expressões.'],
+                ['next', true, 'Id do próximo nó.']
+            ],
+            example: {
+                id: 'monta-assunto', type: 'SET_VARIABLE', next: 'confirma',
+                config: { variable: 'assunto', expression: "upper(trim(tipo)) + ' - ' + protocolo" }
+            }
+        },
+        {
+            type: 'END',
+            title: 'Encerrar (ou retornar)',
+            summary: 'Encerra a conversa. Dentro de um subfluxo, devolve o controle a quem chamou.',
+            why: 'O mesmo bloco servir para os dois casos é o que permite escrever um fluxo sem saber se ele vai rodar sozinho ou ser chamado por outro — que é a razão de subfluxo existir. Não tem next.',
+            fields: [
+                ['text', false, 'Mensagem de despedida. Aceita {{variavel}}.']
+            ],
+            example: {
+                id: 'fim', type: 'END',
+                config: { text: 'Obrigado pelo contato, {{nome}}!' }
+            }
+        },
+        {
+            type: 'CALL_WORKFLOW',
+            title: 'Chamar subfluxo',
+            summary: 'Executa outro fluxo e volta para o next quando ele terminar.',
+            why: 'O subfluxo roda em escopo isolado: ele só enxerga o que estiver em input e só devolve o que estiver em output. Compartilhar todas as variáveis tornaria input/output decorativos e faria um subfluxo reutilizável sobrescrever, sem aviso, uma variável homônima de quem chamou.',
+            fields: [
+                ['workflow', true, 'Id do fluxo a executar.'],
+                ['input', false, 'Variáveis passadas ao filho, separadas por vírgula.'],
+                ['output', false, 'Variáveis do filho trazidas de volta, separadas por vírgula.'],
+                ['next', true, 'Nó que roda quando o subfluxo termina.']
+            ],
+            example: {
+                id: 'coleta-endereco', type: 'CALL_WORKFLOW', next: 'confirma',
+                config: { workflow: 'endereco', input: 'nome', output: 'cep,cidade' }
+            },
+            note: 'Profundidade máxima de 10 chamadas aninhadas — trava de recursão entre fluxos.'
+        },
+        {
+            type: 'DB_QUERY',
+            effect: true,
+            title: 'Consultar o banco',
+            summary: 'Roda um SELECT no banco de destino do IS e joga o resultado em variáveis.',
+            why: 'Somente leitura, comando único, e — a regra que mais importa — variável NUNCA entra como texto no SQL. Use parâmetro nomeado (:nome) e declare-o em params; o valor é ligado como parâmetro JDBC. Um SQL com {{variavel}} é recusado na gravação, porque interpolar o que o usuário digitou no chat dentro de uma consulta é injeção de SQL.',
+            fields: [
+                ['sql', true, 'SELECT (ou WITH…SELECT) com parâmetros nomeados :assim.'],
+                ['params', false, 'Variáveis a ligar aos parâmetros, separadas por vírgula.'],
+                ['output', false, 'coluna:variavel, outra:variavel2 — da primeira linha. Se omitido, todas as colunas viram variáveis com o nome da coluna.'],
+                ['countInto', false, 'Variável que recebe a quantidade de linhas.'],
+                ['next', true, 'Id do próximo nó.']
+            ],
+            example: {
+                id: 'busca-pedido', type: 'DB_QUERY', next: 'achou',
+                config: {
+                    sql: 'SELECT status, valor FROM pedidos WHERE numero = :protocolo',
+                    params: 'protocolo',
+                    output: 'status:situacao, valor:valor_pedido',
+                    countInto: 'encontrados'
+                }
+            },
+            note: 'No máximo 100 linhas e 5s por consulta. Falha no banco interrompe a conversa em vez de seguir com variáveis vazias — senão o IF seguinte tomaria o ramo de "não encontrado" quando o caso real é "o banco caiu".'
+        },
+        {
+            type: 'HTTP_REQUEST',
+            effect: true,
+            title: 'Chamar um serviço',
+            summary: 'Faz GET ou POST num serviço externo e extrai campos da resposta JSON.',
+            why: 'Vem DESLIGADO e só funciona com allowlist de hosts preenchida — instalação air-gapped é cenário real no IS, e chamar URL arbitrária é saída de dados do perímetro. Ligar exige duas decisões conscientes do operador: habilitar em chatapp.actions.http.enabled e listar os hosts em chatapp.actions.http.allowed-hosts.',
+            fields: [
+                ['url', true, 'http:// ou https://. Aceita {{variavel}} (os valores são URL-encoded).'],
+                ['method', false, 'GET (padrão) ou POST.'],
+                ['body', false, 'Corpo do POST. Aceita {{variavel}}.'],
+                ['headers', false, 'Nome=valor, Nome2=valor2.'],
+                ['output', false, 'caminho.no.json:variavel — o caminho desce por objeto e por índice de array.'],
+                ['statusInto', false, 'Variável que recebe o código HTTP.'],
+                ['next', true, 'Id do próximo nó.']
+            ],
+            example: {
+                id: 'consulta-cep', type: 'HTTP_REQUEST', next: 'mostra-endereco',
+                config: {
+                    url: 'https://viacep.com.br/ws/{{cep}}/json/',
+                    method: 'GET',
+                    output: 'logradouro:rua, localidade:cidade',
+                    statusInto: 'http_status'
+                }
+            },
+            note: 'Redirects não são seguidos — um redirect escaparia da allowlist. Resposta limitada a 256 KB e 10s.'
+        }
+    ];
+
+    const OPERATORS = [
+        ['eq / neq', 'Igualdade de texto, sem diferenciar maiúsculas e ignorando espaços das pontas.'],
+        ['contains / not_contains', 'Substring, com a mesma tolerância.'],
+        ['empty / not_empty', 'Variável vazia (ou só espaços).'],
+        ['gt / gte / lt / lte', 'Comparação numérica. Se algum lado não for número, a condição é falsa.']
+    ];
+
+    /* ── Renderização da documentação ─────────────────────────────────────── */
+    function renderDocs() {
+        const docs = $('docs');
+        docs.innerHTML = '';
+
+        const intro = document.createElement('div');
+        intro.className = 'docs-intro';
+        intro.textContent = 'Um fluxo é um grafo de blocos percorrido por uma conversa que guarda variáveis e o nó atual entre uma mensagem e outra. '
+            + 'Cada bloco abaixo mostra o que faz, os campos aceitos e um exemplo — "Inserir no fluxo" adiciona o exemplo ao fluxo aberto na aba Definição.';
+        docs.appendChild(intro);
+
+        const index = document.createElement('div');
+        index.className = 'docs-index';
+        BLOCKS.forEach(block => index.appendChild(indexChip(block.type, 'doc-' + block.type)));
+        index.appendChild(indexChip('{{variáveis}}', 'doc-interp'));
+        index.appendChild(indexChip('operadores', 'doc-operators'));
+        index.appendChild(indexChip('expressões', 'doc-expressions'));
+        docs.appendChild(index);
+
+        BLOCKS.forEach(block => docs.appendChild(renderBlock(block)));
+        docs.appendChild(renderInterpolationDoc());
+        docs.appendChild(renderOperatorsDoc());
+        docs.appendChild(renderExpressionsDoc());
+    }
+
+    function indexChip(label, targetId) {
+        const chip = document.createElement('span');
+        chip.className = 'index-chip';
+        chip.textContent = label;
+        chip.onclick = () => $(targetId).scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return chip;
+    }
+
+    function renderBlock(block) {
+        const card = document.createElement('div');
+        card.className = 'doc-block';
+        card.id = 'doc-' + block.type;
+
+        const title = document.createElement('h3');
+        const type = document.createElement('span');
+        type.className = 'doc-type' + (block.effect ? ' effect' : '');
+        type.textContent = block.type;
+        title.appendChild(type);
+        title.appendChild(document.createTextNode(block.title));
+        card.appendChild(title);
+
+        card.appendChild(paragraph('doc-summary', block.summary));
+        card.appendChild(paragraph('doc-why', block.why));
+        card.appendChild(fieldsTable(block.fields));
+
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(block.example, null, 2);
+        card.appendChild(pre);
+
+        const actions = document.createElement('div');
+        actions.className = 'doc-actions';
+        const insert = document.createElement('button');
+        insert.className = 'btn small';
+        insert.textContent = 'Inserir no fluxo';
+        insert.onclick = () => insertBlock(block);
+        actions.appendChild(insert);
+        if (block.note) actions.appendChild(paragraph('doc-note', block.note));
+        card.appendChild(actions);
+
+        return card;
+    }
+
+    function fieldsTable(fields) {
+        const table = document.createElement('table');
+        const head = document.createElement('tr');
+        ['campo', 'obrigatório', 'o que é'].forEach(label => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            head.appendChild(th);
+        });
+        table.appendChild(head);
+
+        fields.forEach(field => {
+            const row = document.createElement('tr');
+            const name = document.createElement('td');
+            name.className = 'field';
+            name.textContent = field[0];
+            const required = document.createElement('td');
+            required.className = 'req' + (field[1] ? ' yes' : '');
+            required.textContent = field[1] ? 'sim' : 'não';
+            const description = document.createElement('td');
+            description.textContent = field[2];
+            row.appendChild(name);
+            row.appendChild(required);
+            row.appendChild(description);
+            table.appendChild(row);
+        });
+        return table;
+    }
+
+    function renderInterpolationDoc() {
+        const card = document.createElement('div');
+        card.className = 'doc-block';
+        card.id = 'doc-interp';
+        card.appendChild(headingOnly('Variáveis e interpolação'));
+        card.appendChild(paragraph('doc-summary',
+            'Qualquer campo de texto aceita {{variavel}}, substituído pelo valor coletado na conversa.'));
+        card.appendChild(paragraph('doc-why',
+            'Variável não definida vira string vazia, nunca a chave crua: "Olá, {{nome}}" chegando assim ao usuário final é pior que "Olá, ". '
+          + 'A exceção é o campo sql do DB_QUERY, que recusa interpolação de propósito — lá o valor entra como parâmetro.'));
+        const pre = document.createElement('pre');
+        pre.textContent = '"text": "Olá {{nome}}, seu protocolo é {{protocolo}}."';
+        card.appendChild(pre);
+        return card;
+    }
+
+    function renderOperatorsDoc() {
+        const card = document.createElement('div');
+        card.className = 'doc-block';
+        card.id = 'doc-operators';
+        card.appendChild(headingOnly('Operadores do IF (forma simples)'));
+        card.appendChild(paragraph('doc-why',
+            'eq, neq e contains ignoram caixa e espaços das pontas de propósito: o lado esquerdo é texto digitado por uma pessoa num chat, '
+          + 'e "sim " não pode falhar contra "sim".'));
+
+        const table = document.createElement('table');
+        const head = document.createElement('tr');
+        ['operador', 'semântica'].forEach(label => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            head.appendChild(th);
+        });
+        table.appendChild(head);
+        OPERATORS.forEach(pair => {
+            const row = document.createElement('tr');
+            const name = document.createElement('td');
+            name.className = 'field';
+            name.textContent = pair[0];
+            const meaning = document.createElement('td');
+            meaning.textContent = pair[1];
+            row.appendChild(name);
+            row.appendChild(meaning);
+            table.appendChild(row);
+        });
+        card.appendChild(table);
+        return card;
+    }
+
+    function renderExpressionsDoc() {
+        const card = document.createElement('div');
+        card.className = 'doc-block';
+        card.id = 'doc-expressions';
+        card.appendChild(headingOnly('Expressões'));
+        card.appendChild(paragraph('doc-summary',
+            'Disponíveis em IF (campo expression) e SET_VARIABLE (campo expression), quando a forma simples não basta.'));
+        card.appendChild(paragraph('doc-why',
+            'Diferença que importa: na forma simples, gt/lt com valor não numérico devolvem falso; em expressão, < e > FALHAM e a conversa vai para ERROR. '
+          + 'Quem escreve expressão está escrevendo código, e um < que vira falso em silêncio esconde justamente o dado malformado que se queria detectar. '
+          + 'Já o == compara igual ao eq (sem caixa, sem espaços das pontas), para as duas formas não discordarem.'));
+
+        const pre = document.createElement('pre');
+        pre.textContent =
+            'Operadores   ==  !=  <  <=  >  >=   +  -  *  /  %   &&/and  ||/or  !/not  ( )\n' +
+            'Funções      len  lower  upper  trim  isEmpty  isNumber  number\n' +
+            '             contains(a,b)  startsWith(a,b)  endsWith(a,b)  default(a,b)\n' +
+            'Literais     \'texto\'   42   3.14   true   false\n\n' +
+            'IF            "expression": "opcao == \'1\' && len(nome) > 2"\n' +
+            'SET_VARIABLE  "expression": "\'Total: \' + (valor * 1.1)"\n' +
+            'Fallback      "expression": "default(apelido, nome)"';
+        card.appendChild(pre);
+        card.appendChild(paragraph('doc-note',
+            'Nome sem aspas é variável; com aspas é texto. Erro de sintaxe é apontado no botão Validar, não em produção.'));
+        return card;
+    }
+
+    function headingOnly(text) {
+        const title = document.createElement('h3');
+        title.textContent = text;
+        return title;
+    }
+
+    function paragraph(className, text) {
+        const el = document.createElement('div');
+        el.className = className;
+        el.textContent = text;
+        return el;
+    }
+
+    /**
+     * Insere o exemplo no fluxo aberto.
+     *
+     * Se já existir um nó com o mesmo id, o novo ganha um sufixo numérico em vez de sobrescrever:
+     * inserir duas mensagens é caso comum, e silenciosamente trocar a primeira seria perda de
+     * trabalho sem aviso.
+     */
+    function insertBlock(block) {
+        let flow;
+        try {
+            flow = JSON.parse($('editor').value || '{}');
+        } catch (e) {
+            showIssues(['Não consegui inserir: o JSON aberto está inválido — ' + e.message], []);
+            switchTab('editor');
+            return;
+        }
+        if (!Array.isArray(flow.nodes)) flow.nodes = [];
+
+        const node = JSON.parse(JSON.stringify(block.example));
+        const existing = flow.nodes.map(n => n && n.id);
+        if (existing.indexOf(node.id) >= 0) {
+            let suffix = 2;
+            while (existing.indexOf(node.id + '-' + suffix) >= 0) suffix++;
+            node.id = node.id + '-' + suffix;
+        }
+        flow.nodes.push(node);
+        if (!flow.start) flow.start = node.id;
+
+        $('editor').value = JSON.stringify(flow, null, 2);
+        switchTab('editor');
+        showIssues([], [], "Bloco '" + node.id + "' (" + node.type + ") inserido. Ajuste os campos e ligue o 'next' de quem chama.");
+    }
+
+    function switchTab(tab) {
+        const showEditor = tab === 'editor';
+        $('editor').style.display = showEditor ? 'block' : 'none';
+        $('docs').className = showEditor ? '' : 'visible';
+        $('tab-editor').className = showEditor ? 'tab active' : 'tab';
+        $('tab-docs').className = showEditor ? 'tab' : 'tab active';
+    }
+
+    /* ── Status do plugin ─────────────────────────────────────────────────── */
+    function refreshStatus() {
+        fetch(BASE + '/api/status')
+            .then(r => r.json())
+            .then(s => {
+                const dot = $('status-dot');
+                dot.className = 'dot' + (s.schemaReady ? ' ready' : ' error');
+                $('status-text').textContent = s.schemaReady
+                    ? (s.workflowCount + ' fluxo(s) · ' + s.conversationCount + ' conversa(s)')
+                    : 'banco indisponível';
+                if (!s.schemaReady && s.schemaError) $('status-text').title = s.schemaError;
+            })
+            .catch(() => {
+                $('status-dot').className = 'dot error';
+                $('status-text').textContent = 'sem resposta';
+            });
+    }
+
+    /* ── Lista de fluxos ──────────────────────────────────────────────────── */
+    function loadFlows() {
+        fetch(BASE + '/api/workflows')
+            .then(r => r.json())
+            .then(flows => {
+                const list = $('flow-list');
+                list.innerHTML = '';
+                if (!flows.length) {
+                    const hint = document.createElement('div');
+                    hint.className = 'empty-hint';
+                    hint.textContent = 'Nenhum fluxo cadastrado. Clique em + Novo.';
+                    list.appendChild(hint);
+                    return;
+                }
+                flows.forEach(flow => {
+                    const item = document.createElement('div');
+                    item.className = 'flow-item' + (flow.id === selectedId ? ' active' : '');
+                    const name = document.createElement('span');
+                    name.className = 'name';
+                    name.textContent = flow.name;
+                    const id = document.createElement('span');
+                    id.className = 'id';
+                    id.textContent = flow.id;
+                    item.appendChild(name);
+                    item.appendChild(id);
+                    item.onclick = () => openFlow(flow.id);
+                    list.appendChild(item);
+                });
+            });
+    }
+
+    function openFlow(id) {
+        fetch(BASE + '/api/workflows/' + encodeURIComponent(id))
+            .then(r => r.json())
+            .then(flow => {
+                selectedId = flow.id;
+                // Reindenta para 2 espaços: a definição é gravada como veio, e um fluxo enviado
+                // pela API em uma linha só seria ilegível no editor.
+                try { $('editor').value = JSON.stringify(JSON.parse(flow.definition), null, 2); }
+                catch (e) { $('editor').value = flow.definition; }
+                $('editor-subject').textContent = flow.id;
+                clearIssues();
+                switchTab('editor');
+                loadFlows();
+            });
+    }
+
+    function newFlow() {
+        selectedId = null;
+        $('editor-subject').textContent = 'novo fluxo';
+        $('editor').value = JSON.stringify({
+            id: 'meu-fluxo',
+            name: 'Meu fluxo',
+            start: 'inicio',
+            nodes: [
+                { id: 'inicio', type: 'MESSAGE', next: 'pergunta', config: { text: 'Olá!' } },
+                { id: 'pergunta', type: 'INPUT', next: 'fim', config: { prompt: 'Qual é o seu nome?', variable: 'nome' } },
+                { id: 'fim', type: 'END', config: { text: 'Até logo, {{nome}}!' } }
+            ]
+        }, null, 2);
+        clearIssues();
+        switchTab('editor');
+        loadFlows();
+    }
+
+    /* ── Validação e gravação ─────────────────────────────────────────────── */
+    function clearIssues() {
+        $('issues').className = '';
+        $('issues').innerHTML = '';
+    }
+
+    function showIssues(errors, warnings, okMessage) {
+        const box = $('issues');
+        box.innerHTML = '';
+        (errors || []).forEach(msg => box.appendChild(issueEl('error', msg)));
+        (warnings || []).forEach(msg => box.appendChild(issueEl('warning', msg)));
+        if (okMessage && !(errors || []).length) box.appendChild(issueEl('ok', okMessage));
+        box.className = box.children.length ? 'visible' : '';
+    }
+
+    function issueEl(kind, message) {
+        const el = document.createElement('div');
+        el.className = 'issue ' + kind;
+        el.textContent = message;
+        return el;
+    }
+
+    function validateFlow() {
+        fetch(BASE + '/api/workflows/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: $('editor').value
+        })
+            .then(r => r.json())
+            .then(r => {
+                switchTab('editor');
+                showIssues(r.errors, r.warnings, 'Fluxo válido.');
+            });
+    }
+
+    function saveFlow() {
+        let id;
+        try { id = JSON.parse($('editor').value).id; }
+        catch (e) { switchTab('editor'); showIssues(['JSON inválido: ' + e.message], []); return; }
+        if (!id) { showIssues(["O fluxo precisa de um campo 'id'."], []); return; }
+
+        fetch(BASE + '/api/workflows/' + encodeURIComponent(id), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: $('editor').value
+        })
+            .then(r => r.json())
+            .then(r => {
+                switchTab('editor');
+                showIssues(r.errors, r.warnings, r.saved ? 'Fluxo gravado.' : null);
+                if (r.saved) {
+                    selectedId = r.id;
+                    $('editor-subject').textContent = r.id;
+                    loadFlows();
+                    refreshStatus();
+                }
+            });
+    }
+
+    function deleteFlow() {
+        if (!selectedId) { showIssues(['Nenhum fluxo selecionado.'], []); return; }
+        fetch(BASE + '/api/workflows/' + encodeURIComponent(selectedId), { method: 'DELETE' })
+            .then(r => r.json())
+            .then(() => {
+                selectedId = null;
+                $('editor').value = '';
+                $('editor-subject').textContent = '';
+                clearIssues();
+                loadFlows();
+                refreshStatus();
+            });
+    }
+
+    /* ── Chat de teste ────────────────────────────────────────────────────── */
+    function restartConversation() {
+        let id = selectedId;
+        if (!id) {
+            try { id = JSON.parse($('editor').value).id; } catch (e) { id = null; }
+        }
+        if (!id) { switchTab('editor'); showIssues(['Selecione ou salve um fluxo antes de executar.'], []); return; }
+
+        setBusy(true);
+        fetch(BASE + '/api/chat/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workflowId: id, channel: 'ui' })
+        })
+            .then(r => r.json().then(body => ({ ok: r.ok, body })))
+            .then(({ ok, body }) => {
+                if (!ok) { renderChatError(body.error); return; }
+                conversationId = body.conversationId;
+                renderConversation(body);
+                refreshStatus();
+            })
+            .finally(() => setBusy(false));
+    }
+
+    function sendMessage() {
+        const text = $('chat-input').value.trim();
+        if (!text || !conversationId) return;
+        $('chat-input').value = '';
+        setBusy(true);
+        fetch(BASE + '/api/chat/' + conversationId + '/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text })
+        })
+            .then(r => r.json().then(body => ({ ok: r.ok, body })))
+            .then(({ ok, body }) => ok ? renderConversation(body) : renderChatError(body.error))
+            .finally(() => setBusy(false));
+    }
+
+    function renderConversation(view) {
+        const box = $('messages');
+        box.innerHTML = '';
+        (view.messages || []).forEach(m => {
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble ' + m.from;
+            bubble.textContent = m.text;
+            box.appendChild(bubble);
+        });
+        if (view.error) {
+            const err = document.createElement('div');
+            err.className = 'issue error';
+            err.textContent = view.error;
+            box.appendChild(err);
+        }
+        box.scrollTop = box.scrollHeight;
+
+        const chip = $('conv-status');
+        chip.textContent = view.status.toLowerCase().replace('_', ' ');
+        chip.className = 'chip ' + ({
+            WAITING_INPUT: 'waiting', FINISHED: 'finished', ERROR: 'error'
+        }[view.status] || '');
+
+        renderVariables(view.variables);
+
+        // Só faz sentido digitar quando o fluxo parou esperando entrada.
+        const accepting = view.status === 'WAITING_INPUT';
+        $('chat-input').disabled = !accepting;
+        $('btn-send').disabled = !accepting;
+        if (accepting) $('chat-input').focus();
+    }
+
+    function renderVariables(variables) {
+        const box = $('vars');
+        box.innerHTML = '';
+        const names = Object.keys(variables || {});
+        if (!names.length) { box.className = ''; return; }
+        names.forEach(name => {
+            const line = document.createElement('div');
+            const key = document.createElement('span');
+            key.className = 'vk';
+            key.textContent = name + ' = ';
+            line.appendChild(key);
+            line.appendChild(document.createTextNode(variables[name]));
+            box.appendChild(line);
+        });
+        box.className = 'visible';
+    }
+
+    function renderChatError(message) {
+        const box = $('messages');
+        box.innerHTML = '';
+        box.appendChild(issueEl('error', message || 'Falha ao executar o fluxo.'));
+        $('chat-input').disabled = true;
+        $('btn-send').disabled = true;
+    }
+
+    function setBusy(busy) {
+        $('btn-restart').disabled = busy;
+        $('btn-send').disabled = busy || $('chat-input').disabled;
+    }
+
+    /* ── Ligações ─────────────────────────────────────────────────────────── */
+    $('btn-new').onclick = newFlow;
+    $('btn-validate').onclick = validateFlow;
+    $('btn-save').onclick = saveFlow;
+    $('btn-delete').onclick = deleteFlow;
+    $('btn-restart').onclick = restartConversation;
+    $('btn-send').onclick = sendMessage;
+    $('tab-editor').onclick = () => switchTab('editor');
+    $('tab-docs').onclick = () => switchTab('docs');
+    $('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+
+    renderDocs();
+    refreshStatus();
+    loadFlows();
+</script>
+
+</body>
+</html>

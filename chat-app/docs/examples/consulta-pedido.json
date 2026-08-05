@@ -1,0 +1,53 @@
+{
+  "id": "consulta-pedido",
+  "name": "Consulta de pedido (com DB_QUERY)",
+  "start": "pergunta-protocolo",
+  "nodes": [
+    {
+      "id": "pergunta-protocolo",
+      "type": "INPUT",
+      "next": "busca",
+      "config": {
+        "prompt": "Informe o número do pedido.",
+        "variable": "protocolo"
+      }
+    },
+    {
+      "id": "busca",
+      "type": "DB_QUERY",
+      "next": "encontrou",
+      "config": {
+        "sql": "SELECT status, valor FROM pedidos WHERE numero = :protocolo",
+        "params": "protocolo",
+        "output": "status:situacao, valor:valor_pedido",
+        "countInto": "encontrados"
+      }
+    },
+    {
+      "id": "encontrou",
+      "type": "IF",
+      "config": {
+        "expression": "number(encontrados) > 0",
+        "then": "mostra",
+        "else": "nao-achou"
+      }
+    },
+    {
+      "id": "mostra",
+      "type": "MESSAGE",
+      "next": "fim",
+      "config": { "text": "Pedido {{protocolo}}: {{situacao}} — R$ {{valor_pedido}}." }
+    },
+    {
+      "id": "nao-achou",
+      "type": "MESSAGE",
+      "next": "fim",
+      "config": { "text": "Não encontrei o pedido {{protocolo}}." }
+    },
+    {
+      "id": "fim",
+      "type": "END",
+      "config": { "text": "Posso ajudar em mais alguma coisa?" }
+    }
+  ]
+}

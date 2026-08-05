@@ -1,0 +1,40 @@
+{
+  "id": "cadastro-com-subfluxo",
+  "name": "Cadastro (chama subfluxo)",
+  "start": "boas-vindas",
+  "nodes": [
+    {
+      "id": "boas-vindas",
+      "type": "MESSAGE",
+      "next": "pergunta-nome",
+      "config": { "text": "Vamos completar seu cadastro." }
+    },
+    {
+      "id": "pergunta-nome",
+      "type": "INPUT",
+      "next": "coleta-endereco",
+      "config": { "prompt": "Qual é o seu nome?", "variable": "nome" }
+    },
+    {
+      "id": "coleta-endereco",
+      "type": "CALL_WORKFLOW",
+      "next": "confirma",
+      "config": {
+        "workflow": "coleta-endereco",
+        "input": "nome",
+        "output": "cep,cidade"
+      }
+    },
+    {
+      "id": "confirma",
+      "type": "MESSAGE",
+      "next": "fim",
+      "config": { "text": "Endereço registrado: {{cidade}} — CEP {{cep}}." }
+    },
+    {
+      "id": "fim",
+      "type": "END",
+      "config": { "text": "Cadastro concluído, {{nome}}!" }
+    }
+  ]
+}
