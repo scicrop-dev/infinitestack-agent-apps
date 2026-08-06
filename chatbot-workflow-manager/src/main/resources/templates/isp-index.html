@@ -386,6 +386,17 @@
         .chip.waiting  { color: var(--accent2); border-color: #1e3a5f; background: #101d2e; }
         .chip.finished { color: var(--accent);  border-color: #2d4a2d; background: #1a2e1a; }
         .chip.error    { color: var(--danger);  border-color: #4a2d2d; background: #2e1a1a; }
+
+        .doc-chip {
+            display: inline-block;
+            font-size: 11.5px;
+            font-family: var(--mono);
+            padding: 2px 8px;
+            border-radius: 6px;
+            border: 1px solid #2d4a2d;
+            background: #12210f;
+            color: var(--accent);
+        }
     </style>
 </head>
 <body>
@@ -610,7 +621,24 @@
                 }
             },
             note: 'Redirects não são seguidos — um redirect escaparia da allowlist. Resposta limitada a 256 KB e 10s.'
-        }
+        },
+        {
+            type: 'SEND_DOCUMENT',
+            effect: true,
+            title: 'Enviar um arquivo',
+            summary: 'Anexa um arquivo do diretório de documentos do plugin e segue.',
+            why: 'O campo file aceita caminho completo: relativo resolve contra o diretório de documentos, absoluto vale como escrito. A fronteira de segurança não é o caminho, é a origem dele — o TEMPLATE é escrito por quem edita o fluxo e pode apontar para qualquer lugar; os VALORES interpolados vêm da conversa e não podem conter separador nem "..". Assim "/var/reports/{{protocolo}}.pdf" funciona, e um usuário que responda "../../etc/passwd" no protocolo é recusado.',
+            fields: [
+                ['file', true, 'Caminho do arquivo. Relativo resolve contra o diretório de documentos; absoluto vale como escrito. Aceita {{variavel}}.'],
+                ['caption', false, 'Texto enviado logo antes do arquivo. Aceita {{variavel}}.'],
+                ['next', true, 'Id do próximo nó.']
+            ],
+            example: {
+                id: 'envia-tabela', type: 'SEND_DOCUMENT', next: 'fim',
+                config: { file: 'manuais/tabela-precos.pdf', caption: 'Segue nossa tabela de preços, {{nome}}.' }
+            },
+            note: 'Caminho relativo resolve contra CHATBOT_DOCUMENTS_DIR (default <install>/documents — atenção: essa pasta é da VERSÃO do plugin e some numa atualização). Limite de 10 MB. Para voltar a restringir, preencha CHATBOT_DOCUMENTS_ALLOWED_ROOTS. No WhatsApp chega como documento nativo; no Insights, como link de download.'
+        },
     ];
 
     const OPERATORS = [
@@ -635,12 +663,14 @@
         index.className = 'docs-index';
         BLOCKS.forEach(block => index.appendChild(indexChip(block.type, 'doc-' + block.type)));
         index.appendChild(indexChip('{{variáveis}}', 'doc-interp'));
+        index.appendChild(indexChip('is_* (sistema)', 'doc-system-vars'));
         index.appendChild(indexChip('operadores', 'doc-operators'));
         index.appendChild(indexChip('expressões', 'doc-expressions'));
         docs.appendChild(index);
 
         BLOCKS.forEach(block => docs.appendChild(renderBlock(block)));
         docs.appendChild(renderInterpolationDoc());
+        docs.appendChild(renderSystemVariablesDoc());
         docs.appendChild(renderOperatorsDoc());
         docs.appendChild(renderExpressionsDoc());
     }
@@ -727,6 +757,53 @@
           + 'A exceção é o campo sql do DB_QUERY, que recusa interpolação de propósito — lá o valor entra como parâmetro.'));
         const pre = document.createElement('pre');
         pre.textContent = '"text": "Olá {{nome}}, seu protocolo é {{protocolo}}."';
+        card.appendChild(pre);
+        return card;
+    }
+
+    function renderSystemVariablesDoc() {
+        const card = document.createElement('div');
+        card.className = 'doc-block';
+        card.id = 'doc-system-vars';
+        card.appendChild(headingOnly('Variáveis de sistema (is_*)'));
+        card.appendChild(paragraph('doc-summary',
+            'Toda conversa já começa com estas variáveis preenchidas — você não precisa perguntar nem calcular nada.'));
+
+        const table = document.createElement('table');
+        const head = document.createElement('tr');
+        ['variável', 'contém'].forEach(label => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            head.appendChild(th);
+        });
+        table.appendChild(head);
+        [
+            ['{{is_channel}}', "De onde veio a mensagem: whatsapp, telegram, teams, insights ou ui (chat de teste deste painel)."],
+            ['{{is_user_id}}', 'Identidade de quem está falando, como o canal a informou.']
+        ].forEach(pair => {
+            const row = document.createElement('tr');
+            const name = document.createElement('td');
+            name.className = 'field';
+            name.textContent = pair[0];
+            const meaning = document.createElement('td');
+            meaning.textContent = pair[1];
+            row.appendChild(name);
+            row.appendChild(meaning);
+            table.appendChild(row);
+        });
+        card.appendChild(table);
+
+        card.appendChild(paragraph('doc-why',
+            'O prefixo is_ é reservado: nenhum nó pode gravar numa variável que comece com ele, e tentar isso é erro na validação. '
+          + 'A razão é que sobrescrever is_channel não falharia em lugar nenhum — só faria cada ramo que depende dele tomar o caminho errado, sem rastro na conversa. '
+          + 'Ler é sempre permitido. Elas também atravessam CALL_WORKFLOW sem precisar estar em "input", porque são contexto da conversa e não dado do chamador.'));
+
+        const pre = document.createElement('pre');
+        pre.textContent =
+            'Adaptar ao canal (no WhatsApp o anexo chega como arquivo; no Teams, como menção):\n\n' +
+            '{ "id": "pode-anexar", "type": "IF",\n' +
+            '  "config": { "expression": "is_channel == \'whatsapp\' || is_channel == \'insights\'",\n' +
+            '              "then": "envia-pdf", "else": "manda-link" } }';
         card.appendChild(pre);
         return card;
     }
@@ -1045,7 +1122,7 @@
         (view.messages || []).forEach(m => {
             const bubble = document.createElement('div');
             bubble.className = 'bubble ' + m.from;
-            bubble.textContent = m.text;
+            renderBubbleContent(bubble, m.text);
             box.appendChild(bubble);
         });
         if (view.error) {
@@ -1069,6 +1146,28 @@
         $('chat-input').disabled = !accepting;
         $('btn-send').disabled = !accepting;
         if (accepting) $('chat-input').focus();
+    }
+
+    /**
+     * O histórico guarda anexos como "[documento: nome.pdf]" — o conteúdo do arquivo não é
+     * gravado (ver DocumentLibrary.stripForHistory). Renderizar como chip deixa claro que um
+     * arquivo foi entregue, em vez de parecer um texto estranho na conversa.
+     */
+    function renderBubbleContent(bubble, text) {
+        const marker = /\[documento: ([^\]]+)]/g;
+        let cursor = 0, match;
+        while ((match = marker.exec(text)) !== null) {
+            if (match.index > cursor) {
+                bubble.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+            }
+            const chip = document.createElement('span');
+            chip.className = 'doc-chip';
+            chip.textContent = '📎 ' + match[1];
+            bubble.appendChild(chip);
+            cursor = match.index + match[0].length;
+        }
+        if (cursor === 0) { bubble.textContent = text; return; }
+        if (cursor < text.length) bubble.appendChild(document.createTextNode(text.slice(cursor)));
     }
 
     function renderVariables(variables) {

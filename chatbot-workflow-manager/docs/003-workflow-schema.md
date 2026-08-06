@@ -40,6 +40,33 @@ conversa. Variável não definida vira string vazia — nunca a chave crua no te
   "config": { "text": "Prazer, {{nome}}!" } }
 ```
 
+## Variáveis de sistema (`is_*`)
+
+Toda conversa já nasce com estas preenchidas — não é preciso perguntar nem calcular:
+
+| Variável | Contém |
+|---|---|
+| `is_channel` | `whatsapp`, `telegram`, `teams`, `insights` ou `ui` (chat de teste do painel) |
+| `is_user_id` | identidade de quem está falando, como o canal a informou |
+
+O prefixo `is_` é **reservado**: nenhum nó pode gravar numa variável que comece com ele, e tentar
+isso é erro na validação. Sobrescrever `is_channel` não falharia em lugar nenhum — só faria cada
+ramo que depende dele tomar o caminho errado, sem rastro na conversa. Ler é sempre permitido.
+
+Duas propriedades que valem saber:
+
+- **Sobrevivem ao reinício da conversa.** O `START` zera os dados coletados, mas não o contexto:
+  a segunda conversa da mesma pessoa não começa cega.
+- **Atravessam `CALL_WORKFLOW` sem estar em `input`.** São contexto da conversa, não dado do
+  chamador — exigir que cada chamada as declarasse seria ruído, e esquecer faria um subfluxo que
+  ramifica por canal tomar o caminho errado em silêncio.
+
+```json
+{ "id": "pode-anexar", "type": "IF",
+  "config": { "expression": "is_channel == 'whatsapp' || is_channel == 'insights'",
+              "then": "envia-pdf", "else": "manda-link" } }
+```
+
 ## As duas formas de declarar `nodes`
 
 Array (canônica) e mapa `id→nó` são equivalentes; no mapa, a chave vira o `id` do nó. As duas existem

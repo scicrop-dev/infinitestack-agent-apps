@@ -17,6 +17,7 @@ estado, já refletidas no status da conversa — gravá-las produziria mensagens
 
 | `DB_QUERY` | nó `DB_QUERY` | Consulta já executada pelo Action Executor — a ação registra o rastro (linhas, parâmetros) |
 | `HTTP_REQUEST` | nó `HTTP_REQUEST` | Idem (status, método, host) |
+| `SEND_DOCUMENT` | nó `SEND_DOCUMENT` | Rastro do anexo (nome, mime, bytes) — o arquivo em si sai como `SEND_MESSAGE` |
 
 ## O Action Executor
 
@@ -30,6 +31,13 @@ seguinte decidir o ramo, e adiar exigiria partir o turno em dois e reintroduzir 
 que ele não tem. O custo é que consulta lenta segura a thread da mensagem; por isso todo efeito tem
 timeout obrigatório.
 
+### Efeito que produz mensagem, não valor
+
+`ActionExecutor.Result.message(...)` existe por causa do `SEND_DOCUMENT`: o produto dele é o
+arquivo, não um valor. Devolvê-lo por `variables` gravaria o base64 em
+`chatbot_conversation.variables` — megabytes numa coluna de estado, relidos a cada mensagem
+seguinte da conversa. Como mensagem, ele passa uma vez e não fica.
+
 ### Postura de segurança
 
 | | Padrão | Por quê |
@@ -37,8 +45,11 @@ timeout obrigatório.
 | **Banco** | ligado, somente leitura, parametrizado | É o caso de uso central, e o datasource já é o do host. O que protege não é o interruptor: é `SqlGuard` — só SELECT, comando único, e variável **exclusivamente** como parâmetro JDBC. SQL com `{{variavel}}` é recusado na gravação, porque interpolar o que o usuário digitou no chat é injeção. |
 | **HTTP** | desligado, allowlist obrigatória | Instalação air-gapped é cenário real no IS, e chamar URL arbitrária é saída de dados do perímetro. Ligar exige duas decisões: habilitar **e** listar hosts. Habilitar sem listar não libera nada. Redirects não são seguidos — escapariam da allowlist. |
 
-Propriedades: `chatbot.actions.db.{enabled,max-rows,timeout-seconds}` e
-`chatbot.actions.http.{enabled,allowed-hosts,timeout-seconds,max-response-bytes}`.
+| **Arquivos** | diretório único e fechado | `file` é interpolado, então pode vir do que o usuário digitou. Três barreiras em `DocumentLibrary`: nome sem separador nem `..`, caminho real dentro do diretório (resolve link simbólico) e teto de tamanho antes de ler. |
+
+Propriedades: `chatbot.actions.db.{enabled,max-rows,timeout-seconds}`,
+`chatbot.actions.http.{enabled,allowed-hosts,timeout-seconds,max-response-bytes}` e
+`chatbot.documents.{dir,max-bytes}`.
 
 > Como um fluxo passa a poder consultar o banco do cliente, o painel foi restringido a
 > `ADMIN` e `SCICROP` em `plugin-permissions.json`. Usuário final não precisa dele: ele conversa

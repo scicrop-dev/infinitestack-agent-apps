@@ -229,6 +229,44 @@ class SubflowAndEffectsTest {
     // ─── Expressões dentro do motor ───────────────────────────────────────────────
 
     @Test
+    void documentoSaiComoMensagemENaoComoVariavel() {
+        // A garantia que importa: o base64 do arquivo não pode entrar no escopo da conversa, que é
+        // persistido em chatbot_conversation.variables e relido a cada mensagem seguinte.
+        String dataUri = "[manual.pdf](data:application/pdf;base64,QUJD)";
+        ActionExecutor executor = (node, variables) -> ActionExecutor.Result.message(
+                List.of("Segue o manual:", dataUri), Map.of("file", "manual.pdf"));
+
+        Workflow workflow = Workflow.of("w", "W", "envia", List.of(
+                new Node("envia", NodeType.SEND_DOCUMENT, "fim", Map.of("file", "manual.pdf")),
+                end("fim", null)));
+
+        EngineResult result = engine.advance(workflow, ConversationState.initial(), Event.start(),
+                new EngineContext(WorkflowResolver.of(workflow), executor));
+
+        assertNull(result.error());
+        assertEquals(List.of("Segue o manual:", dataUri), texts(result));
+        assertTrue(result.state().variables().isEmpty(),
+                "o conteúdo do documento vazou para as variáveis: " + result.state().variables());
+        assertTrue(result.actions().stream().anyMatch(a -> a.type() == Action.Type.SEND_DOCUMENT));
+    }
+
+    @Test
+    void falhaAoLerODocumentoInterrompeAConversa() {
+        ActionExecutor executor = (node, variables) ->
+                ActionExecutor.Result.failure("Arquivo 'x.pdf' não encontrado");
+
+        Workflow workflow = Workflow.of("w", "W", "envia", List.of(
+                new Node("envia", NodeType.SEND_DOCUMENT, "fim", Map.of("file", "x.pdf")),
+                end("fim", null)));
+
+        EngineResult result = engine.advance(workflow, ConversationState.initial(), Event.start(),
+                new EngineContext(WorkflowResolver.of(workflow), executor));
+
+        assertEquals(ConversationStatus.ERROR, result.state().status());
+        assertTrue(result.error().contains("x.pdf"));
+    }
+
+    @Test
     void ifPorExpressaoESetVariablePorExpressao() {
         Workflow workflow = Workflow.of("w", "W", "prepara", List.of(
                 new Node("prepara", NodeType.SET_VARIABLE, "prepara2", Map.of("variable", "qtd", "value", "4")),

@@ -1,6 +1,7 @@
 package com.infinitestack.chatbotworkflow.engine;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.infinitestack.chatbotworkflow.domain.Node;
@@ -31,22 +32,37 @@ public interface ActionExecutor {
 
     /**
      * @param variables variáveis produzidas pelo efeito (vazio em caso de erro)
+     * @param messages  textos a enviar ao usuário, emitidos como SEND_MESSAGE pelo motor
      * @param details   metadados do que foi executado, para o histórico
      * @param error     mensagem quando o efeito falhou; null em sucesso
      */
-    record Result(Map<String, String> variables, Map<String, String> details, String error) {
+    record Result(Map<String, String> variables, List<String> messages,
+                  Map<String, String> details, String error) {
 
         public Result {
             variables = (variables == null) ? Map.of() : Map.copyOf(variables);
+            messages  = (messages == null)  ? List.of() : List.copyOf(messages);
             details   = (details == null)   ? Map.of() : Map.copyOf(details);
         }
 
         public static Result ok(Map<String, String> variables, Map<String, String> details) {
-            return new Result(variables, details, null);
+            return new Result(variables, List.of(), details, null);
+        }
+
+        /**
+         * Efeito cujo produto é uma mensagem, não um valor.
+         *
+         * Existe por causa do envio de documento: o conteúdo do arquivo chega como data URI, e
+         * devolvê-lo por {@code variables} o gravaria em {@code chatbot_conversation.variables} —
+         * megabytes de base64 persistidos numa coluna de estado, relidos a cada mensagem seguinte
+         * da conversa. Como mensagem, ele passa uma vez e não fica.
+         */
+        public static Result message(List<String> messages, Map<String, String> details) {
+            return new Result(Map.of(), messages, details, null);
         }
 
         public static Result failure(String error) {
-            return new Result(Map.of(), Map.of(), error);
+            return new Result(Map.of(), List.of(), Map.of(), error);
         }
 
         public boolean hasError() {

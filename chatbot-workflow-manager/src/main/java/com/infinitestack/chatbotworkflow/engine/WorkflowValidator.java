@@ -9,6 +9,7 @@ import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
+import com.infinitestack.chatbotworkflow.domain.ConversationState;
 import com.infinitestack.chatbotworkflow.domain.Node;
 import com.infinitestack.chatbotworkflow.domain.NodeType;
 import com.infinitestack.chatbotworkflow.domain.Workflow;
@@ -69,7 +70,7 @@ public class WorkflowValidator {
             String label = "Nó '" + (node.id() == null ? "?" : node.id()) + "'";
 
             if (node.type() == null) {
-                errors.add(label + " tem 'type' ausente ou inválido. Tipos aceitos: MESSAGE, INPUT, IF, SET_VARIABLE, END, CALL_WORKFLOW, DB_QUERY, HTTP_REQUEST.");
+                errors.add(label + " tem 'type' ausente ou inválido. Tipos aceitos: MESSAGE, INPUT, IF, SET_VARIABLE, END, CALL_WORKFLOW, DB_QUERY, HTTP_REQUEST, SEND_DOCUMENT.");
                 continue;
             }
             switch (node.type()) {
@@ -79,6 +80,7 @@ public class WorkflowValidator {
                 }
                 case INPUT -> {
                     requireConfig(node, "variable", label, errors);
+                    rejectReservedTarget(node.config("variable"), label, errors);
                     requireNext(workflow, node, label, errors);
                 }
                 case SET_VARIABLE -> validateSetVariable(workflow, node, label, errors);
@@ -86,12 +88,15 @@ public class WorkflowValidator {
                 case CALL_WORKFLOW -> {
                     requireConfig(node, "workflow", label, errors);
                     requireNext(workflow, node, label, errors);
+                    // 'output' writes into the caller's scope on return — same reservation applies.
+                    rejectReservedTargets(ConfigLists.names(node.config("output", "")), label, errors);
                     // A existência do subfluxo não é checada aqui: o validador é puro e não conhece
                     // repositório. Quem confere é WorkflowService na gravação, como aviso — a ordem
                     // em que os fluxos são criados não pode impedir de salvar o pai antes do filho.
                 }
                 case DB_QUERY -> validateDbQuery(workflow, node, label, errors);
                 case HTTP_REQUEST -> validateHttpRequest(workflow, node, label, errors);
+                case SEND_DOCUMENT -> validateSendDocument(workflow, node, label, errors);
                 case END -> {
                     // END não precisa de nada: 'text' é opcional e 'next' não se aplica.
                 }
@@ -125,6 +130,7 @@ public class WorkflowValidator {
 
     private void validateSetVariable(Workflow workflow, Node node, String label, List<String> errors) {
         requireConfig(node, "variable", label, errors);
+        rejectReservedTarget(node.config("variable"), label, errors);
         requireNext(workflow, node, label, errors);
 
         String expression = node.config("expression");
@@ -156,6 +162,9 @@ public class WorkflowValidator {
             errors.add(label + " (DB_QUERY): " + e.getMessage());
             return;
         }
+        rejectReservedTargets(ConfigLists.mapping(node.config("output", "")).values(), label, errors);
+        rejectReservedTarget(node.config("countInto"), label, errors);
+
         List<String> declared = ConfigLists.names(node.config("params", ""));
         for (String required : SqlGuard.namedParameters(sql)) {
             if (!declared.contains(required)) {
@@ -163,6 +172,20 @@ public class WorkflowValidator {
                         + "' não está declarado em 'params'.");
             }
         }
+    }
+
+    /**
+     * Only checks the shape here — {@code file} may be any path, so there is nothing to reject
+     * statically.
+     *
+     * What actually protects the filesystem runs at execution time in {@code DocumentLibrary},
+     * where the interpolated values are known: the template is authored and may point anywhere,
+     * but a value substituted into it cannot introduce a separator or {@code ..}. That distinction
+     * is impossible to make from the definition alone.
+     */
+    private void validateSendDocument(Workflow workflow, Node node, String label, List<String> errors) {
+        requireNext(workflow, node, label, errors);
+        requireConfig(node, "file", label, errors);
     }
 
     private void validateHttpRequest(Workflow workflow, Node node, String label, List<String> errors) {
@@ -177,6 +200,8 @@ public class WorkflowValidator {
         if (!url.isBlank() && !url.startsWith("http://") && !url.startsWith("https://")) {
             errors.add(label + " (HTTP_REQUEST): url deve começar com http:// ou https://.");
         }
+        rejectReservedTargets(ConfigLists.mapping(node.config("output", "")).values(), label, errors);
+        rejectReservedTarget(node.config("statusInto"), label, errors);
     }
 
     private void validateStart(Workflow workflow, List<String> errors) {
@@ -222,6 +247,26 @@ public class WorkflowValidator {
         }
         if (!hasEnd) {
             warnings.add("Nenhum nó END é alcançável — as conversas deste fluxo nunca chegam a FINISHED.");
+        }
+    }
+
+    /**
+     * Blocks a node from writing to a runtime-owned variable.
+     *
+     * These carry the conversation context (channel, speaker). Letting a flow overwrite one would
+     * not fail anywhere — it would just make every branch that reads it take the wrong path, and
+     * the cause would be invisible in the conversation history.
+     */
+    private void rejectReservedTarget(String name, String label, List<String> errors) {
+        if (ConversationState.isSystemVariable(name)) {
+            errors.add(label + ": '" + name + "' é uma variável do sistema (prefixo '"
+                    + ConversationState.SYSTEM_PREFIX + "') e não pode ser escrita pelo fluxo.");
+        }
+    }
+
+    private void rejectReservedTargets(Iterable<String> names, String label, List<String> errors) {
+        for (String name : names) {
+            rejectReservedTarget(name, label, errors);
         }
     }
 

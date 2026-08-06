@@ -141,6 +141,67 @@ class ResumeSemanticsTest {
         assertEquals("ViaTelegram", tg.variables().get("nome"));
     }
 
+    // ─── Variáveis de sistema ─────────────────────────────────────────────────────
+
+    @Test
+    void fluxoJaComecaComOCanalEOInterlocutor() {
+        ConversationService.Turn turn = service.resume("atendimento", "whatsapp", "5511999", "oi");
+
+        assertEquals("whatsapp", turn.variables().get("is_channel"));
+        assertEquals("5511999", turn.variables().get("is_user_id"));
+    }
+
+    @Test
+    void variaveisDeSistemaSobrevivemAoTurnoSeguinte() {
+        service.resume("atendimento", "telegram", "tg-42", "oi");
+        ConversationService.Turn segundo = service.resume("atendimento", "telegram", "tg-42", "Ana");
+
+        assertEquals("telegram", segundo.variables().get("is_channel"));
+        assertEquals("tg-42", segundo.variables().get("is_user_id"));
+    }
+
+    @Test
+    void conversaNovaAposEncerradaRecebeAsVariaveisDeNovo() {
+        // O START zera os dados da conversa; o contexto do canal não pode ir junto, senão a
+        // segunda conversa da mesma pessoa começaria cega.
+        service.resume("atendimento", "whatsapp", "jid-z", "oi");
+        service.resume("atendimento", "whatsapp", "jid-z", "Ana");           // encerra
+
+        ConversationService.Turn nova = service.resume("atendimento", "whatsapp", "jid-z", "de novo");
+
+        assertTrue(nova.startedNew());
+        assertEquals("whatsapp", nova.variables().get("is_channel"));
+        assertEquals("jid-z", nova.variables().get("is_user_id"));
+    }
+
+    @Test
+    void oFluxoConsegueInterpolarEEscolherRamoPeloCanal() {
+        // É o uso real: adaptar a resposta à capacidade do canal.
+        WorkflowRepository workflows = new InMemoryWorkflowRepository();
+        workflows.save("por-canal", "Por canal", """
+                { "id": "por-canal", "name": "Por canal", "start": "decide", "nodes": [
+                    { "id": "decide", "type": "IF",
+                      "config": { "expression": "is_channel == 'whatsapp'",
+                                  "then": "wa", "else": "outro" } },
+                    { "id": "wa",    "type": "END", "config": { "text": "Anexo enviado para {{is_user_id}}." } },
+                    { "id": "outro", "type": "END", "config": { "text": "Segue o link." } }
+                ]}
+                """);
+        SchemaInitializer schema = new SchemaInitializer(null) {
+            @Override public boolean ensureReady() { return true; }
+        };
+        ObjectMapper objectMapper = new ObjectMapper();
+        ConversationService local = new ConversationService(
+                new InMemoryConversationRepository(objectMapper),
+                new WorkflowService(workflows, new WorkflowParser(objectMapper), new WorkflowValidator(), schema),
+                new WorkflowEngine(50, 10), schema, (node, variables) -> null);
+
+        assertEquals(List.of("Anexo enviado para 5511999."),
+                local.resume("por-canal", "whatsapp", "5511999", "oi").messages());
+        assertEquals(List.of("Segue o link."),
+                local.resume("por-canal", "teams", "user-x", "oi").messages());
+    }
+
     // ─── Dublês em memória ────────────────────────────────────────────────────────
 
     private static class InMemoryWorkflowRepository extends WorkflowRepository {

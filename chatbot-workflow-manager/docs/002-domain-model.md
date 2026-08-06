@@ -8,7 +8,7 @@
 | **ConversationState** | `domain/ConversationState` | O que o motor manipula: status, nó atual e variáveis. |
 | **Event** | `domain/Event` | O que entra: `START` ou `USER_MESSAGE`. |
 | **Action** | `domain/Action` | O que sai: `SEND_MESSAGE`, `WAIT_INPUT`, `END` (e `DB_QUERY`/`HTTP_REQUEST`, ainda não emitidas). |
-| **Variable** | `Map<String,String>` em `ConversationState` | Valores coletados no fluxo. Sempre texto nesta fase. |
+| **Variable** | `Map<String,String>` em `ConversationState` | Valores coletados no fluxo. Sempre texto nesta fase. As que começam com `is_` são do runtime e o fluxo não pode escrevê-las. |
 
 ## Por que `config` é `Map<String,String>` e não um tipo por nó
 

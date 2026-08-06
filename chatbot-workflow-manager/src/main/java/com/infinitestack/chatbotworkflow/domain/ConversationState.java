@@ -49,6 +49,25 @@ public record ConversationState(
         callStack = (callStack == null) ? List.of() : List.copyOf(callStack);
     }
 
+    /**
+     * Prefix reserved for variables the runtime sets on its own.
+     *
+     * A flow cannot write to a name starting with it — the validator rejects that. Without the
+     * reservation, an INPUT storing into {@code is_channel} would silently shadow the real channel,
+     * and every branch depending on it would take the wrong path with no error anywhere.
+     */
+    public static final String SYSTEM_PREFIX = "is_";
+
+    /** Channel the message came from: whatsapp, telegram, teams, insights or ui. */
+    public static final String VAR_CHANNEL = SYSTEM_PREFIX + "channel";
+
+    /** The speaker's identity inside the channel, as the adapter reported it. */
+    public static final String VAR_USER_ID = SYSTEM_PREFIX + "user_id";
+
+    public static boolean isSystemVariable(String name) {
+        return name != null && name.startsWith(SYSTEM_PREFIX);
+    }
+
     /** Estado inicial de uma conversa que ainda não executou nenhum nó. */
     public static ConversationState initial() {
         return new ConversationState(ConversationStatus.RUNNING, null, null, Map.of(), List.of());

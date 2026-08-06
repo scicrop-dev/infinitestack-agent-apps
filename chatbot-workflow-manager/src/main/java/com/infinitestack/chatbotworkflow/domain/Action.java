@@ -13,7 +13,7 @@ import java.util.Map;
  */
 public record Action(Type type, String text, Map<String, String> details) {
 
-    public enum Type { SEND_MESSAGE, WAIT_INPUT, END, DB_QUERY, HTTP_REQUEST }
+    public enum Type { SEND_MESSAGE, WAIT_INPUT, END, DB_QUERY, HTTP_REQUEST, SEND_DOCUMENT }
 
     public Action {
         details = (details == null) ? Map.of() : Map.copyOf(details);

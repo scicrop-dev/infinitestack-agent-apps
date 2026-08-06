@@ -121,7 +121,8 @@ public class ConversationService {
                 ConversationState.initial(),
                 Instant.now(), Instant.now());
 
-        EngineResult result = engine.advance(workflow, conversation.state(), Event.start(), contextFor(workflow));
+        EngineResult result = engine.advance(workflow, withSystemVariables(conversation),
+                Event.start(), contextFor(workflow));
         conversation = conversation.withState(result.state());
 
         repository.insert(conversation);
@@ -153,7 +154,8 @@ public class ConversationService {
         repository.appendEvent(conversation.id(), "IN", Event.Type.USER_MESSAGE.name(), text);
 
         Workflow workflow = workflowService.load(conversation.workflowId());
-        EngineResult result = engine.advance(workflow, conversation.state(), Event.userMessage(text), contextFor(workflow));
+        EngineResult result = engine.advance(workflow, withSystemVariables(conversation),
+                Event.userMessage(text), contextFor(workflow));
 
         Conversation updated = conversation.withState(result.state());
         repository.update(updated);
@@ -228,7 +230,30 @@ public class ConversationService {
      *
      * Só SEND_MESSAGE vira linha de diálogo: WAIT_INPUT e END são transições de estado, já
      * refletidas no status da conversa, e apareceriam como mensagens vazias no chat.
+     *
+     * O turno devolvido ao chamador carrega o anexo inteiro; o histórico guarda só a menção. É por
+     * isso que o painel, ao reabrir uma conversa antiga, mostra "[documento: x.pdf]" no lugar do
+     * arquivo — o arquivo foi entregue ao canal na hora, e o histórico é registro, não repositório.
      */
+    /**
+     * Puts the runtime-provided variables into the state before every turn.
+     *
+     * Applied on each turn, not only at creation, for two reasons. It self-heals conversations
+     * started before these variables existed — they would otherwise run forever without them. And
+     * it makes the values authoritative: whatever is stored in the conversation row wins over
+     * whatever ended up in the variables map, so a flow can never drift from the real channel.
+     *
+     * <p>The START event resets the state, so seeding also has to happen after the engine call
+     * path picks it up — which is why this wraps the state handed to {@code advance()} rather than
+     * being written once at insert time.
+     */
+    private ConversationState withSystemVariables(Conversation conversation) {
+        return conversation.state()
+                .withVariable(ConversationState.VAR_CHANNEL, conversation.channel())
+                .withVariable(ConversationState.VAR_USER_ID,
+                        conversation.channelUserId() == null ? "" : conversation.channelUserId());
+    }
+
     /** Os textos que o fluxo produziu neste turno, na ordem — a mesma regra do persistOutbound. */
     private List<String> outboundTexts(EngineResult result) {
         List<String> texts = new ArrayList<>();
@@ -243,7 +268,10 @@ public class ConversationService {
     private void persistOutbound(String conversationId, EngineResult result) {
         for (Action action : result.actions()) {
             if (action.type() == Action.Type.SEND_MESSAGE) {
-                repository.appendEvent(conversationId, "OUT", action.type().name(), action.text());
+                // O conteúdo de um anexo não entra no histórico — só a menção. Ver
+                // DocumentLibrary.stripForHistory.
+                repository.appendEvent(conversationId, "OUT", action.type().name(),
+                        DocumentLibrary.stripForHistory(action.text()));
             }
         }
         if (result.hasError()) {

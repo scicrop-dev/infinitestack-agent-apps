@@ -266,6 +266,53 @@ class WorkflowValidatorTest {
         assertTrue(result.errors().stream().anyMatch(e -> e.contains("http://")));
     }
 
+    // ─── Variáveis de sistema ─────────────────────────────────────────────────────
+
+    @Test
+    void fluxoNaoPodeEscreverEmVariavelDeSistema() {
+        // Sobrescrever is_channel não falharia em lugar nenhum — só faria todo ramo que depende
+        // dele tomar o caminho errado, sem rastro na conversa.
+        WorkflowValidator.Result result = validate("""
+                { "id": "w", "name": "W", "start": "a", "nodes": [
+                    { "id": "a", "type": "INPUT", "next": "b", "config": { "variable": "is_channel" } },
+                    { "id": "b", "type": "END", "config": {} }
+                ]}
+                """);
+
+        assertFalse(result.valid());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("variável do sistema")), result.errors().toString());
+    }
+
+    @Test
+    void aReservaValeParaTodosOsNosQueEscrevem() {
+        String[] nos = {
+            "{ \"id\": \"a\", \"type\": \"SET_VARIABLE\", \"next\": \"b\", \"config\": { \"variable\": \"is_user_id\", \"value\": \"x\" } }",
+            "{ \"id\": \"a\", \"type\": \"DB_QUERY\", \"next\": \"b\", \"config\": { \"sql\": \"SELECT 1 AS n\", \"output\": \"n:is_channel\" } }",
+            "{ \"id\": \"a\", \"type\": \"DB_QUERY\", \"next\": \"b\", \"config\": { \"sql\": \"SELECT 1\", \"countInto\": \"is_total\" } }",
+            "{ \"id\": \"a\", \"type\": \"HTTP_REQUEST\", \"next\": \"b\", \"config\": { \"url\": \"https://x.com\", \"statusInto\": \"is_status\" } }",
+            "{ \"id\": \"a\", \"type\": \"CALL_WORKFLOW\", \"next\": \"b\", \"config\": { \"workflow\": \"outro\", \"output\": \"is_channel\" } }",
+        };
+        for (String no : nos) {
+            WorkflowValidator.Result result = validate(
+                    "{ \"id\": \"w\", \"name\": \"W\", \"start\": \"a\", \"nodes\": ["
+                    + no + ", { \"id\": \"b\", \"type\": \"END\", \"config\": {} } ]}");
+            assertFalse(result.valid(), "deveria recusar: " + no);
+            assertTrue(result.errors().stream().anyMatch(e -> e.contains("variável do sistema")),
+                    "sem a mensagem certa em: " + no + " -> " + result.errors());
+        }
+    }
+
+    @Test
+    void lerVariavelDeSistemaContinuaPermitido() {
+        assertTrue(validate("""
+                { "id": "w", "name": "W", "start": "a", "nodes": [
+                    { "id": "a", "type": "IF",
+                      "config": { "expression": "is_channel == 'whatsapp'", "then": "b", "else": "b" } },
+                    { "id": "b", "type": "END", "config": { "text": "canal: {{is_channel}}" } }
+                ]}
+                """).valid());
+    }
+
     // ─── Fase 6: expressões ───────────────────────────────────────────────────────
 
     @Test

@@ -138,6 +138,48 @@ Somente leitura, comando único, no máximo 100 linhas e 5s. Falha interrompe a 
               "statusInto": "http_status" } }
 ```
 
+## SEND_DOCUMENT — envia um arquivo
+
+Anexa um arquivo do diretório de documentos e segue.
+
+| Config | Obrigatório | Descrição |
+|---|---|---|
+| `file` | sim | Caminho do arquivo. Relativo resolve contra o diretório de documentos; absoluto vale como escrito. Aceita `{{variavel}}`. |
+| `caption` | não | Texto enviado logo antes do arquivo. Aceita `{{variavel}}`. |
+
+Os arquivos ficam em `IS_PLUGIN_INSTALL_PATH/documents` (ou `CHATBOT_DOCUMENTS_DIR`). Limite de
+10 MB (`chatbot.documents.max-bytes`).
+
+> **Onde fica a fronteira de confiança.** O perigo nunca foi ter caminho, foi a origem dele.
+> O **template** é escrito por quem edita o fluxo (ADMIN/SCICROP no painel) e pode apontar para
+> qualquer lugar. Os **valores interpolados** vêm da conversa e são recusados se contiverem
+> separador ou `..` — então `"/var/reports/{{protocolo}}.pdf"` não sai de `/var/reports` seja qual
+> for a resposta do usuário. Recusar em vez de higienizar é proposital: transformar
+> `../../etc/passwd` em `etcpasswd` apareceria depois como um "arquivo não encontrado" confuso.
+>
+> Continuam valendo: teto de tamanho antes da leitura, log de toda leitura fora do diretório de
+> documentos, e uma allowlist **opcional** de raízes (`chatbot.documents.allowed-roots`, vazia por
+> padrão) para quem quiser devolver a contenção.
+
+> **Atenção ao default.** `chatbot.documents.dir` vazio resolve para `<install>/documents`, e
+> `IS_PLUGIN_INSTALL_PATH` inclui a **versão** do plugin — numa atualização os arquivos ficam para
+> trás na pasta antiga. Em produção, aponte `CHATBOT_DOCUMENTS_DIR` para um caminho persistente.
+
+O arquivo sai como data URI em markdown de **link** — `[nome.pdf](data:application/pdf;base64,…)`.
+A ausência do `!` é o que distingue anexo de imagem, e é o que faz o backend escolher a API de
+documento do canal em vez da de imagem. No WhatsApp chega como documento nativo; no Insights, como
+link de download; em canais sem suporte, como `[documento: nome.pdf]`.
+
+O histórico (`chatbot_event`) guarda só a menção, não os bytes — é registro, não repositório.
+
+```json
+{ "id": "envia-tabela", "type": "SEND_DOCUMENT", "next": "fim",
+  "config": { "file": "manuais/tabela-precos.pdf", "caption": "Segue nossa tabela, {{nome}}." } }
+
+{ "id": "envia-relatorio", "type": "SEND_DOCUMENT", "next": "fim",
+  "config": { "file": "/opt/infinitestack/var/reports/{{protocolo}}.pdf" } }
+```
+
 ## Expressões (`expression`)
 
 Disponível em `IF` e `SET_VARIABLE` como alternativa à forma simples.

@@ -115,7 +115,12 @@ public class WorkflowEngine {
             if (rootWorkflow.node(rootWorkflow.start()) == null) {
                 throw new FlowError("Nó inicial '" + rootWorkflow.start() + "' não existe no workflow.");
             }
+            // START wipes conversation data but keeps the ambient variables (is_*). They describe
+            // the context the conversation runs in — which channel, which speaker — not anything
+            // the flow collected, so resetting them would be wrong: the second conversation of the
+            // same person on the same channel would start blind.
             return ConversationState.initial()
+                    .withVariables(systemVariablesOf(state))
                     .at(rootWorkflow.id(), rootWorkflow.start())
                     .withStatus(ConversationStatus.RUNNING);
         }
@@ -158,7 +163,7 @@ public class WorkflowEngine {
             case IF            -> executeIf(node, state);
             case END           -> executeEnd(node, state, actions, ctx);
             case CALL_WORKFLOW -> executeCallWorkflow(node, state, ctx);
-            case DB_QUERY, HTTP_REQUEST -> executeEffect(node, state, actions, ctx);
+            case DB_QUERY, HTTP_REQUEST, SEND_DOCUMENT -> executeEffect(node, state, actions, ctx);
         };
     }
 
@@ -289,7 +294,11 @@ public class WorkflowEngine {
             throw new FlowError("Subfluxo '" + targetId + "' tem nó inicial '" + target.start() + "' inexistente.");
         }
 
-        Map<String, String> childScope = new LinkedHashMap<>();
+        // The child sees only what 'input' declares — plus the ambient is_* variables, which are
+        // not caller data but conversation context. Forcing every call site to list them in
+        // 'input' would be noise, and forgetting to would make a subflow that branches on the
+        // channel silently take the wrong path.
+        Map<String, String> childScope = new LinkedHashMap<>(systemVariablesOf(state));
         for (String name : ConfigLists.names(node.config("input", ""))) {
             childScope.put(name, state.variable(name));
         }
@@ -305,7 +314,12 @@ public class WorkflowEngine {
     }
 
     /**
-     * DB_QUERY e HTTP_REQUEST: delega ao executor e mescla o que voltou no escopo atual.
+     * Nós de efeito: delega ao executor e incorpora o que voltou.
+     *
+     * O executor pode devolver <b>variáveis</b> (DB_QUERY, HTTP_REQUEST) ou <b>mensagens</b>
+     * (SEND_DOCUMENT, cujo produto é o arquivo em si). Mensagem não vira variável de propósito: o
+     * conteúdo de um documento chega como base64 e gravá-lo no escopo o persistiria na coluna de
+     * estado da conversa, sendo relido a cada mensagem seguinte.
      *
      * Falha do efeito é erro de fluxo — a conversa para. A alternativa (seguir com variáveis vazias)
      * levaria o IF seguinte a tomar o ramo do "não encontrado" quando o caso real é "o banco caiu",
@@ -316,12 +330,31 @@ public class WorkflowEngine {
         if (result.hasError()) {
             throw new FlowError("Nó '" + node.id() + "' (" + node.type() + ") falhou: " + result.error());
         }
-        actions.add(Action.effect(Action.Type.valueOf(node.type().name()),
+        for (String message : result.messages()) {
+            actions.add(Action.sendMessage(message));
+        }
+        actions.add(Action.effect(actionTypeFor(node.type()),
                 "Nó '" + node.id() + "' executado.", result.details()));
         return new StepOutcome(state.withVariables(result.variables()).at(requireNext(node)), false);
     }
 
+    /** SEND_DOCUMENT não tem ação própria — o que sai dele é mensagem; o registro é de rastro. */
+    private Action.Type actionTypeFor(NodeType nodeType) {
+        return nodeType == NodeType.SEND_DOCUMENT
+                ? Action.Type.SEND_DOCUMENT
+                : Action.Type.valueOf(nodeType.name());
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+    /** The is_* subset of a scope — the variables the runtime owns and the flow cannot write. */
+    private static Map<String, String> systemVariablesOf(ConversationState state) {
+        Map<String, String> ambient = new LinkedHashMap<>();
+        state.variables().forEach((name, value) -> {
+            if (ConversationState.isSystemVariable(name)) ambient.put(name, value);
+        });
+        return ambient;
+    }
 
     private Workflow resolveWorkflow(Workflow rootWorkflow, String workflowId, EngineContext ctx) {
         if (workflowId == null || (rootWorkflow.id() != null && rootWorkflow.id().equals(workflowId))) {

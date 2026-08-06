@@ -7,6 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -24,6 +25,7 @@ import com.infinitestack.chatbotworkflow.domain.Node;
 import com.infinitestack.chatbotworkflow.engine.ActionExecutor;
 import com.infinitestack.chatbotworkflow.engine.SqlGuard;
 import com.infinitestack.chatbotworkflow.engine.ConfigLists;
+import com.infinitestack.chatbotworkflow.engine.VariableInterpolator;
 
 /**
  * Executa os efeitos de DB_QUERY e HTTP_REQUEST (fase 3 do roadmap).
@@ -49,6 +51,7 @@ public class DefaultActionExecutor implements ActionExecutor {
 
     private final NamedParameterJdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final DocumentLibrary documentLibrary;
     private final HttpClient httpClient;
 
     @Value("${chatbot.actions.db.enabled:true}")
@@ -72,9 +75,11 @@ public class DefaultActionExecutor implements ActionExecutor {
     @Value("${chatbot.actions.http.max-response-bytes:262144}")
     private int httpMaxResponseBytes;
 
-    public DefaultActionExecutor(NamedParameterJdbcTemplate jdbc, ObjectMapper objectMapper) {
+    public DefaultActionExecutor(NamedParameterJdbcTemplate jdbc, ObjectMapper objectMapper,
+                                 DocumentLibrary documentLibrary) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.documentLibrary = documentLibrary;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .followRedirects(HttpClient.Redirect.NEVER)   // redirect escaparia da allowlist
@@ -85,8 +90,9 @@ public class DefaultActionExecutor implements ActionExecutor {
     public Result execute(Node node, Map<String, String> variables) {
         try {
             return switch (node.type()) {
-                case DB_QUERY     -> executeDbQuery(node, variables);
-                case HTTP_REQUEST -> executeHttpRequest(node, variables);
+                case DB_QUERY      -> executeDbQuery(node, variables);
+                case HTTP_REQUEST  -> executeHttpRequest(node, variables);
+                case SEND_DOCUMENT -> executeSendDocument(node, variables);
                 default -> Result.failure("Tipo de nó não executável aqui: " + node.type());
             };
         } catch (IllegalArgumentException e) {
@@ -239,6 +245,45 @@ public class DefaultActionExecutor implements ActionExecutor {
                 "method", method,
                 "host", host);
         return Result.ok(produced, details);
+    }
+
+    // ─── SEND_DOCUMENT ────────────────────────────────────────────────────────────
+
+    /**
+     * config:
+     * <pre>
+     *   file      caminho do arquivo — obrigatório, aceita {{variavel}}. Relativo resolve contra
+     *             o diretório de documentos; absoluto vale como escrito.
+     *   caption   texto enviado antes do arquivo — opcional, aceita {{variavel}}
+     * </pre>
+     *
+     * O arquivo sai como data URI dentro de uma mensagem, em markdown de link
+     * ({@code [nome.pdf](data:application/pdf;base64,...)}). Quem transforma isso em documento
+     * nativo do canal é o adapter no host — aqui o plugin não conhece WhatsApp nem Telegram.
+     *
+     * <p>A legenda vai como <b>mensagem separada</b>, antes do arquivo: o marcador do documento
+     * carrega só o nome, e misturar legenda dentro dele exigiria um formato próprio em vez de
+     * markdown legível.
+     */
+    private Result executeSendDocument(Node node, Map<String, String> variables) {
+        // The template goes in raw: DocumentLibrary owns the interpolation because the rule about
+        // what a substituted value may contain is a security rule, not a formatting one.
+        DocumentLibrary.Document document = documentLibrary.load(node.config("file", ""), variables);
+
+        List<String> messages = new ArrayList<>();
+        String caption = node.config("caption");
+        if (caption != null) {
+            messages.add(VariableInterpolator.interpolate(caption, variables));
+        }
+        messages.add(document.asMarkdownLink());
+
+        log.info("[chatbot-workflow-manager] documento anexado | nó: {} | arquivo: {} | bytes: {}",
+                node.id(), document.fileName(), document.bytes());
+
+        return Result.message(messages, Map.of(
+                "file", document.fileName(),
+                "mime", document.mimeType(),
+                "bytes", String.valueOf(document.bytes())));
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────────

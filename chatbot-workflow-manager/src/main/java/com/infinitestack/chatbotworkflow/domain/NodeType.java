@@ -15,11 +15,18 @@ public enum NodeType {
     END,
     CALL_WORKFLOW,
     DB_QUERY,
-    HTTP_REQUEST;
+    HTTP_REQUEST,
+    SEND_DOCUMENT;
 
-    /** Nós que saem do processo para produzir valor. */
+    /**
+     * Nós que saem do processo para produzir seu resultado — banco, rede ou disco.
+     *
+     * SEND_DOCUMENT entra aqui, e não entre os conversacionais, porque ler arquivo é I/O: se o
+     * motor o executasse sozinho ele deixaria de ser função pura e os testes voltariam a precisar
+     * de filesystem.
+     */
     public boolean isEffect() {
-        return this == DB_QUERY || this == HTTP_REQUEST;
+        return this == DB_QUERY || this == HTTP_REQUEST || this == SEND_DOCUMENT;
     }
 
     /** Retorna null em vez de lançar — quem chama decide se é erro de validação ou de runtime. */
