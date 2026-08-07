@@ -103,7 +103,7 @@ public class DocumentLibrary {
     /**
      * Troca o conteúdo do anexo por uma menção legível, para gravar no histórico.
      *
-     * {@code chatbot_event} existe para rastreabilidade e para a UI remontar o diálogo — nenhum
+     * {@code chatbot_workflow_manager_event} existe para rastreabilidade e para a UI remontar o diálogo — nenhum
      * dos dois precisa dos bytes do arquivo. Guardá-los ali significaria megabytes de base64 por
      * mensagem numa tabela append-only que só cresce, relida inteira a cada abertura da conversa.
      * O nome do arquivo é o que dá a informação: <i>o quê</i> foi enviado, e quando.

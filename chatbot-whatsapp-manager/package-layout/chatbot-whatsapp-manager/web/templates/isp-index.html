@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot WhatsApp Manager</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0d0d0d;
+            --surface: #161616;
+            --surface2: #1e1e1e;
+            --border: #2a2a2a;
+            --text: #e8e8e8;
+            --muted: #6b6b6b;
+            --accent: #4ade80;
+            --accent2: #60a5fa;
+            --danger: #f87171;
+            --warn: #facc15;
+            --radius: 8px;
+            --font: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+            --mono: 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 14px;
+            line-height: 1.5;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── HEADER ─────────────────────────────────────────── */
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+        header .badge {
+            font-size: 11px;
+            background: #1a2e1a;
+            color: var(--accent);
+            border: 1px solid #2d4a2d;
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+        #conn-status {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+        .dot.ready { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+        .dot.error { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+        .dot.warn  { background: var(--warn);   box-shadow: 0 0 6px var(--warn); }
+
+        /* ── LAYOUT ─────────────────────────────────────────── */
+        .layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            height: calc(100vh - 53px);
+            overflow: hidden;
+        }
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        /* ── CONTATOS ───────────────────────────────────────── */
+        .contacts-panel {
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: grid;
+            grid-template-rows: auto auto 1fr;
+            overflow: hidden;
+        }
+        .contacts-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 14px 10px;
+        }
+        .contacts-search { padding: 0 14px 12px; }
+        .contacts-search input { width: 100%; }
+        #contact-list { overflow-y: auto; padding: 0 10px 14px; }
+
+        .contact {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 10px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            margin-bottom: 3px;
+        }
+        .contact:hover { background: var(--surface2); }
+        .contact.active { background: var(--surface2); border-color: var(--accent2); }
+        .avatar {
+            width: 32px; height: 32px;
+            flex: 0 0 32px;
+            border-radius: 50%;
+            background: #1a2e1a;
+            color: var(--accent);
+            border: 1px solid #2d4a2d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .contact-info { min-width: 0; }
+        .contact-name {
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .contact-phone {
+            font-size: 10.5px;
+            color: var(--muted);
+            font-family: var(--mono);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .empty-hint { font-size: 12px; color: var(--muted); padding: 12px 4px; }
+
+        /* ── CONVERSA ───────────────────────────────────────── */
+        .thread-panel {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            overflow: hidden;
+            background: var(--bg);
+        }
+        .thread-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+        .thread-head .spacer { margin-left: auto; }
+        #thread-title { font-size: 14px; font-weight: 600; }
+        #thread-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+        #messages {
+            overflow-y: auto;
+            padding: 20px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .bubble {
+            max-width: 72%;
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            position: relative;
+        }
+        .bubble.in  { background: var(--surface2); border: 1px solid var(--border); align-self: flex-start; }
+        .bubble.out { background: #1a2e1a; border: 1px solid #2d4a2d; align-self: flex-end; }
+        .bubble .at {
+            display: block;
+            margin-top: 4px;
+            font-size: 10px;
+            color: var(--muted);
+            font-family: var(--mono);
+        }
+        .day-sep {
+            align-self: center;
+            font-size: 10px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--muted);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 2px 12px;
+            margin: 8px 0;
+        }
+        .placeholder {
+            margin: auto;
+            text-align: center;
+            color: var(--muted);
+            font-size: 12.5px;
+            max-width: 300px;
+        }
+        .placeholder svg { opacity: 0.22; margin-bottom: 12px; }
+
+        /* ── COMPOSER ───────────────────────────────────────── */
+        .composer {
+            border-top: 1px solid var(--border);
+            background: var(--surface);
+            padding: 12px 20px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .composer input[type=text] { flex: 1; }
+        #attach-label {
+            cursor: pointer;
+            padding: 8px 11px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            font-size: 13px;
+            user-select: none;
+        }
+        #attach-label:hover { border-color: var(--accent); }
+        #attach-input { display: none; }
+        #attach-chip {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            font-size: 11.5px;
+            font-family: var(--mono);
+            color: var(--accent);
+            background: #12210f;
+            border: 1px solid #2d4a2d;
+            border-radius: 6px;
+            padding: 4px 8px;
+        }
+        #attach-chip.visible { display: inline-flex; }
+        #attach-chip .x { cursor: pointer; color: var(--muted); font-family: var(--font); }
+        #attach-chip .x:hover { color: var(--danger); }
+
+        #feedback {
+            border-top: 1px solid var(--border);
+            padding: 8px 20px;
+            font-size: 12px;
+            font-family: var(--mono);
+            display: none;
+        }
+        #feedback.visible { display: block; }
+        #feedback.ok    { color: #86efac; }
+        #feedback.error { color: #fca5a5; }
+
+        /* ── CONTROLES ──────────────────────────────────────── */
+        input, textarea {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-family: var(--font);
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        input:focus { border-color: var(--accent); }
+
+        .btn {
+            padding: 8px 14px;
+            background: var(--accent);
+            color: #0d1a0d;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.12s;
+        }
+        .btn:hover:not(:disabled) { opacity: 0.88; }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .btn.secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+        .btn.small { padding: 5px 10px; font-size: 11px; }
+
+        .chip {
+            font-size: 10px;
+            padding: 3px 9px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            color: var(--muted);
+            letter-spacing: 0.04em;
+        }
+        .chip.attending { color: var(--warn); border-color: #4a412d; background: #211d0f; }
+
+        .bubble .who {
+            display: block;
+            font-size: 9.5px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 3px;
+        }
+        .bubble.operator { background: #101d2e; border-color: #1e3a5f; }
+        .bubble.reaction {
+            font-size: 12px;
+            color: var(--muted);
+            background: transparent;
+            border: 1px dashed var(--border);
+            padding: 4px 10px;
+        }
+        .bubble .quote {
+            display: block;
+            font-size: 11.5px;
+            color: var(--muted);
+            border-left: 2px solid var(--accent2);
+            padding-left: 8px;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .bubble .media {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--mono);
+            font-size: 11.5px;
+            color: var(--accent);
+            background: #12210f;
+            border: 1px solid #2d4a2d;
+            border-radius: 6px;
+            padding: 3px 8px;
+        }
+        .contact .att-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--warn); flex: 0 0 6px; margin-left: auto;
+            box-shadow: 0 0 5px var(--warn);
+        }
+
+        .note {
+            font-size: 11px;
+            color: var(--muted);
+            padding: 8px 20px;
+            border-top: 1px solid var(--border);
+            background: var(--surface);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Chatbot WhatsApp Manager</h1>
+    <span class="badge">v1.0</span>
+    <div id="conn-status"><span class="dot" id="status-dot"></span><span id="status-text">verificando…</span></div>
+</header>
+
+<div class="layout">
+
+    <!-- ── CONTATOS ───────────────────────────────────────── -->
+    <aside class="contacts-panel">
+        <div class="contacts-head">
+            <span class="section-title">Contatos</span>
+            <button class="btn secondary small" id="btn-reload">Atualizar</button>
+        </div>
+        <div class="contacts-search">
+            <input type="text" id="contact-filter" placeholder="Filtrar por nome ou número…">
+        </div>
+        <div id="contact-list"><div class="empty-hint">Carregando…</div></div>
+    </aside>
+
+    <!-- ── CONVERSA ───────────────────────────────────────── -->
+    <main class="thread-panel">
+        <div class="thread-head">
+            <div>
+                <div id="thread-title">Nenhuma conversa aberta</div>
+                <div id="thread-sub">selecione um contato à esquerda</div>
+            </div>
+            <span class="spacer"></span>
+            <span class="chip" id="attending-chip" style="display:none"></span>
+            <button class="btn small" id="btn-attend" disabled>Assumir atendimento</button>
+            <button class="btn secondary small" id="btn-refresh-thread" disabled>Recarregar</button>
+        </div>
+
+        <div id="messages">
+            <div class="placeholder">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                </svg>
+                <div>Escolha um contato para ver o histórico da conversa e responder.</div>
+            </div>
+        </div>
+
+        <div>
+            <div id="feedback"></div>
+            <div class="composer">
+                <label id="attach-label" for="attach-input" title="Anexar imagem ou documento">📎</label>
+                <input type="file" id="attach-input">
+                <span id="attach-chip"><span id="attach-name"></span><span class="x" id="attach-clear">✕</span></span>
+                <input type="text" id="message-input" placeholder="Escreva uma mensagem…" disabled>
+                <button class="btn" id="btn-send" disabled>Enviar</button>
+            </div>
+        </div>
+    </main>
+
+</div>
+
+<script th:inline="javascript">
+    /*
+     * O painel conversa com a API do HOST, não com este plugin.
+     *
+     * A página roda dentro do iframe do IS, na mesma origem e carregando a sessão do operador —
+     * então ela lê o histórico e envia mensagem exatamente como o front do IS faz, e este app não
+     * precisa guardar credencial nenhuma. É também por isso que não há endpoint próprio aqui.
+     */
+    const HOST = /*[[${hostApiPath}]]*/ '/api';
+
+    let contacts = [];        // [{ jid, userId, name, email }]
+    let selected = null;
+    let attachment = null;    // { name, mime, base64, isImage }
+    let attending = {};       // jid -> operatorId, para quem o bot está calado
+
+    /* Endpoints DESTE app (o transcript próprio) — distintos das rotas do host. */
+    const APP = /*[[${pluginBasePath}]]*/ '/api/plugins/chatbot-whatsapp-manager';
+
+    const $ = id => document.getElementById(id);
+
+    // ── Estado da conexão WhatsApp ───────────────────────────────────────────
+    function refreshStatus() {
+        fetch(HOST + '/admin/baileys/status')
+            .then(r => r.json())
+            .then(s => {
+                const connected = s.status === 'connected';
+                $('status-dot').className = 'dot' + (connected ? ' ready' : ' warn');
+                $('status-text').textContent = connected ? 'WhatsApp conectado' : ('WhatsApp: ' + (s.status || '?'));
+            })
+            .catch(() => {
+                $('status-dot').className = 'dot error';
+                $('status-text').textContent = 'status indisponível';
+            });
+    }
+
+    // ── Contatos ─────────────────────────────────────────────────────────────
+    /**
+     * Contato = quem já interagiu pelo WhatsApp e tem identidade no IS.
+     *
+     * A lista sai de channel-users (o vínculo JID ↔ usuário criado pelo /entrar) cruzada com
+     * admin/users só para ter nome e email. Não existe "adicionar contato" aqui de propósito: o
+     * backend recusa enviar para número que não esteja nesse vínculo.
+     */
+    function loadContacts() {
+        Promise.allSettled([
+            fetch(HOST + '/admin/channel-users').then(r => r.json()),
+            fetch(HOST + '/admin/users').then(r => r.json()),
+            fetch(HOST + '/admin/baileys/attendance').then(r => r.json())
+        ]).then(([channelData, usersData, attendanceData]) => {
+            attending = {};
+            if (attendanceData.status === 'fulfilled') {
+                (attendanceData.value.attending || []).forEach(a => { attending[a.jid] = a.operatorId; });
+            }
+            const entries = channelData.status === 'fulfilled'
+                ? (channelData.value.channel_users || []) : [];
+            const users = usersData.status === 'fulfilled' && Array.isArray(usersData.value)
+                ? usersData.value : [];
+            const byId = Object.fromEntries(users.map(u => [u.id, u]));
+
+            contacts = entries
+                .filter(e => e.channel === 'whatsapp')
+                .map(e => {
+                    const user = byId[e.user_id] || {};
+                    return {
+                        jid: e.channel_id,
+                        userId: e.user_id,
+                        name: user.name || user.email || e.user_id,
+                        email: user.email || ''
+                    };
+                })
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+            renderContacts();
+        });
+    }
+
+    function renderContacts() {
+        const term = $('contact-filter').value.trim().toLowerCase();
+        const list = $('contact-list');
+        list.innerHTML = '';
+
+        const shown = contacts.filter(c =>
+            !term || c.name.toLowerCase().includes(term) || c.jid.toLowerCase().includes(term));
+
+        if (!shown.length) {
+            const hint = document.createElement('div');
+            hint.className = 'empty-hint';
+            hint.textContent = contacts.length
+                ? 'Nenhum contato bate com o filtro.'
+                : 'Ninguém interagiu pelo WhatsApp ainda. Um contato aparece aqui depois de se autenticar com /entrar.';
+            list.appendChild(hint);
+            return;
+        }
+
+        shown.forEach(contact => {
+            const item = document.createElement('div');
+            item.className = 'contact' + (selected && selected.jid === contact.jid ? ' active' : '');
+
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            avatar.textContent = initialsOf(contact.name);
+
+            const info = document.createElement('div');
+            info.className = 'contact-info';
+            const name = document.createElement('div');
+            name.className = 'contact-name';
+            name.textContent = contact.name;
+            const phone = document.createElement('div');
+            phone.className = 'contact-phone';
+            phone.textContent = phoneOf(contact.jid);
+            info.appendChild(name);
+            info.appendChild(phone);
+
+            item.appendChild(avatar);
+            item.appendChild(info);
+            if (attending[contact.jid]) {
+                const dot = document.createElement('span');
+                dot.className = 'att-dot';
+                dot.title = 'em atendimento humano — o bot está calado';
+                item.appendChild(dot);
+            }
+            item.onclick = () => openContact(contact);
+            list.appendChild(item);
+        });
+    }
+
+    function initialsOf(name) {
+        const parts = name.trim().split(/\s+/).filter(Boolean);
+        if (!parts.length) return '?';
+        return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+    }
+
+    /** "5511999999999@s.whatsapp.net" → "+55 11 99999-9999" quando dá; senão o JID cru. */
+    function phoneOf(jid) {
+        const raw = (jid || '').split('@')[0];
+        if (!/^\d{12,13}$/.test(raw)) return jid;
+        const country = raw.slice(0, 2), area = raw.slice(2, 4), rest = raw.slice(4);
+        const half = rest.length - 4;
+        return '+' + country + ' ' + area + ' ' + rest.slice(0, half) + '-' + rest.slice(half);
+    }
+
+    // ── Conversa ─────────────────────────────────────────────────────────────
+    function openContact(contact) {
+        selected = contact;
+        $('thread-title').textContent = contact.name;
+        $('thread-sub').textContent = phoneOf(contact.jid) + (contact.email ? ' · ' + contact.email : '');
+        $('btn-refresh-thread').disabled = false;
+        $('message-input').disabled = false;
+        $('btn-send').disabled = false;
+        $('btn-attend').disabled = false;
+        clearFeedback();
+        renderAttendance();
+        renderContacts();
+        loadThread();
+    }
+
+    /** Reflete no cabeçalho quem está segurando a conversa. */
+    function renderAttendance() {
+        const operator = selected ? attending[selected.jid] : null;
+        const chip = $('attending-chip');
+        if (operator) {
+            chip.textContent = 'bot silenciado · ' + operator;
+            chip.className = 'chip attending';
+            chip.style.display = '';
+            $('btn-attend').textContent = 'Liberar para o bot';
+            $('btn-attend').className = 'btn secondary small';
+        } else {
+            chip.style.display = 'none';
+            $('btn-attend').textContent = 'Assumir atendimento';
+            $('btn-attend').className = 'btn small';
+        }
+    }
+
+    /**
+     * Assume ou libera a conversa.
+     *
+     * Enquanto assumida, o backend não deixa NADA automático sair para aquele número — nem resposta
+     * de agente, nem o pedido de autenticação. Duas vozes na mesma conversa, possivelmente se
+     * contradizendo, é pior que uma só.
+     */
+    function toggleAttendance() {
+        if (!selected) return;
+        const active = !attending[selected.jid];
+        $('btn-attend').disabled = true;
+
+        post('/admin/baileys/attendance', { jid: selected.jid, active: active })
+            .then(data => {
+                if (active) attending[selected.jid] = data.operator || 'você';
+                else delete attending[selected.jid];
+                renderAttendance();
+                renderContacts();
+                showFeedback('ok', active
+                    ? 'Você assumiu a conversa — o bot não responde mais este contato.'
+                    : 'Conversa devolvida ao bot.');
+            })
+            .catch(error => showFeedback('error', error.message || 'Falha ao mudar o atendimento.'))
+            .finally(() => { $('btn-attend').disabled = false; });
+    }
+
+    /**
+     * A conversa vem do transcript deste app — o registro completo.
+     *
+     * Ele é alimentado pelo backend, que captura nas duas únicas portas por onde uma mensagem do
+     * WhatsApp passa, então inclui o que o histórico do IS nunca viu: o fluxo /entrar, as recusas
+     * de não autenticado, as mensagens de progresso, as mídias e o que foi digitado aqui.
+     *
+     * O histórico antigo do IS entra só como reserva, para conversas anteriores à captura — ali ele
+     * é o único registro que existe, ainda que parcial.
+     */
+    function loadThread() {
+        if (!selected) return;
+        const box = $('messages');
+        box.innerHTML = '';
+        box.appendChild(paragraph('placeholder', 'Carregando conversa…'));
+
+        fetch(APP + '/api/messages?jid=' + encodeURIComponent(selected.jid))
+            .then(r => r.ok ? r.json() : Promise.reject(new Error('transcript indisponível')))
+            .then(data => {
+                if ((data.messages || []).length) renderThread(data.messages, false);
+                else loadLegacyThread();
+            })
+            .catch(() => loadLegacyThread());
+    }
+
+    /** Conversas anteriores à captura só existem no histórico do IS, em pares pergunta/resposta. */
+    function loadLegacyThread() {
+        const query = '?userId=' + encodeURIComponent(selected.userId) + '&channel=whatsapp&page=0&size=200';
+        fetch(HOST + '/admin/chathistory' + query)
+            .then(r => r.json())
+            .then(page => {
+                const converted = [];
+                (page.entries || []).slice()
+                    .sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''))
+                    .forEach(entry => {
+                        if (entry.userMessage) converted.push({ direction: 'IN', type: 'text',
+                            content: entry.userMessage, origin: 'contact', happenedAt: entry.timestamp });
+                        if (entry.llmResponse) converted.push({ direction: 'OUT', type: 'text',
+                            content: entry.llmResponse, origin: 'bot', happenedAt: entry.timestamp });
+                    });
+                renderThread(converted, true);
+            })
+            .catch(() => {
+                const box = $('messages');
+                box.innerHTML = '';
+                box.appendChild(paragraph('placeholder', 'Não consegui carregar a conversa.'));
+            });
+    }
+
+    /** Índice id-do-WhatsApp → mensagem, para resolver a prévia de uma citação. */
+    let byWaId = {};
+
+    /** Uma linha curta descrevendo uma mensagem, usada na prévia de citação. */
+    function preview(message) {
+        if (message.type === 'text') return (message.content || '').slice(0, 60);
+        if (message.type === 'document') return '📎 ' + (message.fileName || 'arquivo');
+        return { image: '🖼️ imagem', video: '🎬 vídeo', gif: '🎞️ GIF',
+                 audio: '🎧 áudio', location: '📍 localização',
+                 contact: '👤 contato' }[message.type] || message.type;
+    }
+
+    function renderThread(messages, legacy) {
+        const box = $('messages');
+        box.innerHTML = '';
+        byWaId = {};
+        messages.forEach(m => { if (m.waMessageId) byWaId[m.waMessageId] = m; });
+
+        if (!messages.length) {
+            box.appendChild(paragraph('placeholder', 'Nenhuma mensagem registrada para este contato ainda.'));
+            return;
+        }
+        if (legacy) box.appendChild(paragraph('day-sep', 'histórico anterior à captura — parcial'));
+
+        let lastDay = null;
+        messages.forEach(message => {
+            const day = (message.happenedAt || '').slice(0, 10);
+            if (day && day !== lastDay) {
+                box.appendChild(daySeparator(day));
+                lastDay = day;
+            }
+            box.appendChild(messageBubble(message));
+        });
+        box.scrollTop = box.scrollHeight;
+    }
+
+    /**
+     * Uma bolha por mensagem, identificando quem falou.
+     *
+     * A distinção entre bot e operador é o que este painel existe para mostrar: sem ela, quem abre
+     * uma conversa antiga não sabe se aquela resposta veio da automação ou de um colega.
+     */
+    function messageBubble(message) {
+        const el = document.createElement('div');
+        const incoming = message.direction === 'IN';
+        const operator = message.origin === 'operator';
+        el.className = 'bubble ' + (incoming ? 'in' : 'out') + (operator ? ' operator' : '');
+
+        if (!incoming) {
+            const who = document.createElement('span');
+            who.className = 'who';
+            who.textContent = operator ? 'operador' : 'bot';
+            el.appendChild(who);
+        }
+
+        // Reação não é bolha de conversa: é um emoji preso a outra mensagem.
+        if (message.type === 'reaction') {
+            el.className = 'bubble reaction ' + (incoming ? 'in' : 'out');
+            el.textContent = message.content
+                ? (message.content + '  reagiu a uma mensagem')
+                : 'removeu a reação';
+            if (message.happenedAt) {
+                const at = document.createElement('span');
+                at.className = 'at';
+                at.textContent = timeOf(message.happenedAt);
+                el.appendChild(at);
+            }
+            return el;
+        }
+
+        // Citação: mostra a que mensagem esta responde, quando ela está no transcript.
+        if (message.replyToId) {
+            const quote = document.createElement('span');
+            quote.className = 'quote';
+            const alvo = byWaId[message.replyToId];
+            quote.textContent = alvo ? preview(alvo) : 'respondendo a uma mensagem anterior';
+            el.appendChild(quote);
+        }
+
+        const MEDIA_LABEL = {
+            image:    '🖼️ imagem',
+            video:    '🎬 vídeo',
+            gif:      '🎞️ GIF',
+            audio:    '🎧 áudio',
+            location: '📍 localização',
+            contact:  '👤 contato'
+        };
+
+        if (MEDIA_LABEL[message.type] || message.type === 'document') {
+            const media = document.createElement('span');
+            media.className = 'media';
+            media.textContent = message.type === 'document'
+                ? ('📎 ' + (message.fileName || 'arquivo'))
+                : MEDIA_LABEL[message.type];
+            el.appendChild(media);
+            if (message.content) el.appendChild(document.createTextNode('\n' + message.content));
+        } else {
+            el.appendChild(document.createTextNode(message.content || ''));
+        }
+
+        if (message.happenedAt) {
+            const at = document.createElement('span');
+            at.className = 'at';
+            at.textContent = timeOf(message.happenedAt);
+            el.appendChild(at);
+        }
+        return el;
+    }
+
+    function daySeparator(day) {
+        const el = document.createElement('div');
+        el.className = 'day-sep';
+        const parts = day.split('-');
+        el.textContent = parts.length === 3 ? (parts[2] + '/' + parts[1] + '/' + parts[0]) : day;
+        return el;
+    }
+
+    function timeOf(timestamp) {
+        const match = /T(\d{2}:\d{2})/.exec(timestamp || '');
+        return match ? match[1] : '';
+    }
+
+    function paragraph(className, text) {
+        const el = document.createElement('div');
+        el.className = className;
+        el.textContent = text;
+        return el;
+    }
+
+    // ── Anexo ────────────────────────────────────────────────────────────────
+    $('attach-input').addEventListener('change', event => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        if (file.size > 10 * 1024 * 1024) {
+            showFeedback('error', 'Arquivo maior que 10 MB.');
+            event.target.value = '';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            // O resultado é "data:<mime>;base64,<conteúdo>" — o backend quer só o conteúdo.
+            const result = String(reader.result);
+            attachment = {
+                name: file.name,
+                mime: file.type || 'application/octet-stream',
+                base64: result.slice(result.indexOf(',') + 1),
+                isImage: (file.type || '').startsWith('image/')
+            };
+            $('attach-name').textContent = file.name;
+            $('attach-chip').className = 'visible';
+            clearFeedback();
+        };
+        reader.readAsDataURL(file);
+    });
+
+    $('attach-clear').onclick = clearAttachment;
+
+    function clearAttachment() {
+        attachment = null;
+        $('attach-input').value = '';
+        $('attach-chip').className = '';
+    }
+
+    // ── Envio ────────────────────────────────────────────────────────────────
+    /**
+     * Imagem e documento são rotas diferentes de propósito.
+     *
+     * O WhatsApp trata as duas coisas de formas distintas: imagem vira miniatura no fio da conversa,
+     * documento vira um cartão com nome e botão de baixar. Um PDF mandado como imagem chega como
+     * anexo quebrado, sem nome, que o destinatário não abre.
+     */
+    function sendMessage() {
+        if (!selected) return;
+        const text = $('message-input').value.trim();
+        if (!text && !attachment) return;
+
+        setBusy(true);
+        const requests = [];
+
+        if (attachment) {
+            const route = attachment.isImage ? '/admin/baileys/send-image' : '/admin/baileys/send-document';
+            const body = attachment.isImage
+                ? { jid: selected.jid, imageBase64: attachment.base64, caption: text }
+                : { jid: selected.jid, documentBase64: attachment.base64,
+                    fileName: attachment.name, mimeType: attachment.mime };
+            requests.push(post(route, body));
+            // O documento não carrega legenda: se havia texto, ele vai como mensagem à parte.
+            if (text && !attachment.isImage) {
+                requests.push(() => post('/admin/baileys/send', { jid: selected.jid, message: text }));
+            }
+        } else {
+            requests.push(post('/admin/baileys/send', { jid: selected.jid, message: text }));
+        }
+
+        // Em sequência, não em paralelo: duas mensagens disparadas juntas podem chegar fora de ordem.
+        sequence(requests)
+            .then(() => {
+                $('message-input').value = '';
+                clearAttachment();
+                showFeedback('ok', 'Mensagem enviada.');
+                // O envio acabou de virar linha no transcript; recarregar mostra-a na conversa.
+                setTimeout(loadThread, 600);
+            })
+            .catch(error => showFeedback('error', error.message || 'Falha ao enviar.'))
+            .finally(() => setBusy(false));
+    }
+
+    function post(path, body) {
+        return fetch(HOST + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).then(response => response.json().then(data => {
+            if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+            return data;
+        }));
+    }
+
+    /** Aceita promessas já iniciadas e funções que criam a próxima, preservando a ordem. */
+    function sequence(items) {
+        return items.reduce(
+            (chain, item) => chain.then(() => (typeof item === 'function' ? item() : item)),
+            Promise.resolve());
+    }
+
+    function setBusy(busy) {
+        $('btn-send').disabled = busy || !selected;
+        $('message-input').disabled = busy || !selected;
+    }
+
+    function showFeedback(kind, message) {
+        const box = $('feedback');
+        box.textContent = message;
+        box.className = 'visible ' + kind;
+    }
+
+    function clearFeedback() {
+        $('feedback').className = '';
+        $('feedback').textContent = '';
+    }
+
+    // ── Ligações ─────────────────────────────────────────────────────────────
+    $('btn-reload').onclick = () => { loadContacts(); refreshStatus(); };
+    $('btn-refresh-thread').onclick = loadThread;
+    $('btn-attend').onclick = toggleAttendance;
+    $('btn-send').onclick = sendMessage;
+    $('contact-filter').addEventListener('input', renderContacts);
+    $('message-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+
+    refreshStatus();
+    loadContacts();
+</script>
+
+</body>
+</html>

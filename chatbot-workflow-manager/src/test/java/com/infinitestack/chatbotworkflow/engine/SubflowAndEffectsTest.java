@@ -231,7 +231,7 @@ class SubflowAndEffectsTest {
     @Test
     void documentoSaiComoMensagemENaoComoVariavel() {
         // A garantia que importa: o base64 do arquivo não pode entrar no escopo da conversa, que é
-        // persistido em chatbot_conversation.variables e relido a cada mensagem seguinte.
+        // persistido em chatbot_workflow_manager_conversation.variables e relido a cada mensagem seguinte.
         String dataUri = "[manual.pdf](data:application/pdf;base64,QUJD)";
         ActionExecutor executor = (node, variables) -> ActionExecutor.Result.message(
                 List.of("Segue o manual:", dataUri), Map.of("file", "manual.pdf"));

@@ -170,7 +170,7 @@ A ausência do `!` é o que distingue anexo de imagem, e é o que faz o backend 
 documento do canal em vez da de imagem. No WhatsApp chega como documento nativo; no Insights, como
 link de download; em canais sem suporte, como `[documento: nome.pdf]`.
 
-O histórico (`chatbot_event`) guarda só a menção, não os bytes — é registro, não repositório.
+O histórico (`chatbot_workflow_manager_event`) guarda só a menção, não os bytes — é registro, não repositório.
 
 ```json
 { "id": "envia-tabela", "type": "SEND_DOCUMENT", "next": "fim",

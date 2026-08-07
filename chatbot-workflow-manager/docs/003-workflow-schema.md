@@ -16,7 +16,7 @@
 
 | Campo | Obrigatório | Descrição |
 |---|---|---|
-| `id` | sim | Identificador único. Vira a chave primária em `chatbot_workflow` e precisa bater com o id da URL no `PUT`. |
+| `id` | sim | Identificador único. Vira a chave primária em `chatbot_workflow_manager_workflow` e precisa bater com o id da URL no `PUT`. |
 | `name` | não (aviso) | Título exibido na lista do painel. |
 | `start` | sim | Id do primeiro nó. Precisa existir em `nodes`. |
 | `nodes` | sim | Array de nós — ou, alternativamente, um objeto `{ "id-do-no": { ... } }`. |
@@ -47,7 +47,18 @@ Toda conversa já nasce com estas preenchidas — não é preciso perguntar nem 
 | Variável | Contém |
 |---|---|
 | `is_channel` | `whatsapp`, `telegram`, `teams`, `insights` ou `ui` (chat de teste do painel) |
-| `is_user_id` | identidade de quem está falando, como o canal a informou |
+| `is_user_id` | quem está falando, na identidade do InfiniteStack — é o que mantém uma conversa por pessoa |
+| `is_channel_user` | a identidade como o canal a conhece: o JID cru do WhatsApp |
+| `is_phone` | só os dígitos do número, quando há um; vazio em grupo, Telegram e painel |
+| `is_channel_user_name` | nome de exibição que o contato configurou no WhatsApp |
+
+> **`is_user_id` e `is_channel_user` respondem perguntas diferentes.** O primeiro é quem a pessoa é
+> dentro do IS, e é o que define a conversa — trocar de número não abre uma conversa nova. O segundo
+> é como o canal a conhece, e é o que o fluxo precisa quando tem que agir sobre o canal: devolver o
+> número, procurar o cliente por telefone.
+
+> **`is_channel_user_name` é texto que o contato escolheu.** Serve para cumprimentar; não serve para
+> decidir acesso nem para tratar como identidade.
 
 O prefixo `is_` é **reservado**: nenhum nó pode gravar numa variável que comece com ele, e tentar
 isso é erro na validação. Sobrescrever `is_channel` não falharia em lugar nenhum — só faria cada

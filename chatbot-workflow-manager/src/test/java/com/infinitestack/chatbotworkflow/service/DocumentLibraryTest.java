@@ -195,7 +195,7 @@ class DocumentLibraryTest {
 
     @Test
     void stripForHistoryTrocaOConteudoPelaMencao() {
-        // Sem isto, cada anexo enviado grava seu base64 em chatbot_event, numa tabela append-only
+        // Sem isto, cada anexo enviado grava seu base64 em chatbot_workflow_manager_event, numa tabela append-only
         // relida inteira toda vez que a conversa é aberta.
         String comAnexo = "Segue.\n\n" + library.load("tabela-precos.pdf", Map.of()).asMarkdownLink();
 

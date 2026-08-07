@@ -447,6 +447,83 @@ public class PluginWebConfig implements WebMvcConfigurer {
 
 ---
 
+## Banco de dados — nomenclatura obrigatória
+
+Duas regras, e as duas são obrigatórias.
+
+### 1. Tudo vive no schema `apps`
+
+**Todo Agent App cria suas tabelas no schema `apps`**, nunca em `public`. O schema é criado pelo
+próprio app, na primeira instrução do seu DDL:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS apps;
+```
+
+E toda instrução seguinte é **qualificada explicitamente** — `apps.minha_tabela`, não
+`minha_tabela` confiando no `search_path`.
+
+> **Por que qualificar em vez de configurar o `search_path` da conexão.** Ficaria mais limpo, mas
+> não é determinístico: o Postgres aceita um `search_path` apontando para um schema que ainda não
+> existe e silenciosamente cai para o próximo. Entre o pool abrir a primeira conexão e o schema ser
+> criado, um `CREATE TABLE` cairia em `public` — e nada reportaria isso.
+
+O nome do schema é configurável (`infinitestack.app.schema`, default `apps`) para o caso de um DBA
+já ter provisionado outro. O app valida que o valor é um identificador simples antes de colocá-lo
+no DDL: é configuração, mas ainda é SQL.
+
+### 2. Toda tabela começa com o `plugin_id`
+
+Dentro de `apps`, **cada tabela é prefixada com o `plugin_id`** convertido para snake_case:
+
+```
+apps.<plugin_id em snake_case>_<nome da tabela>
+```
+
+| `plugin_id` | Tabela | Nome obrigatório |
+|---|---|---|
+| `chatbot-workflow-manager` | conversas | `apps.chatbot_workflow_manager_conversation` |
+| `chatbot-whatsapp-manager` | mensagens | `apps.chatbot_whatsapp_manager_message` |
+| `recomendador-manejo` | simulações | `apps.recomendador_manejo_simulation` |
+
+O mesmo vale para **índices**, com o prefixo depois do `idx_`:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_chatbot_whatsapp_manager_message_jid
+    ON apps.chatbot_whatsapp_manager_message (jid, happened_at);
+```
+
+### Por que as regras existem
+
+Um Agent App **não tem banco próprio**: ele grava no banco de destino do cliente, o mesmo onde
+estão as tabelas de negócio dele e as de todos os outros apps instalados.
+
+O **schema separado** faz de "tudo que os apps criaram" uma coisa só, endereçável: dá para conceder
+ou revogar de uma vez, aparece separado num dump, e ninguém confunde com tabela de negócio. Sem ele,
+as tabelas dos apps ficam espalhadas no meio do que o cliente possui.
+
+O **prefixo por app** resolve o que o schema sozinho não resolve — de qual app é cada tabela. Sem
+ele, três coisas ruins acontecem, e nenhuma dá erro na hora:
+
+1. **Colisão silenciosa.** Dois apps que criem `conversation` com `CREATE TABLE IF NOT EXISTS`
+   passam a compartilhar a mesma tabela sem nenhum aviso — o segundo simplesmente encontra a tabela
+   já existente, com o schema errado, e só falha quando insere.
+2. **Colisão com o cliente.** `message`, `event`, `document` são nomes que uma empresa
+   provavelmente já usa. O app não pode reivindicá-los.
+3. **Ninguém sabe de quem é.** Ao desinstalar um app, ou ao investigar o que ocupa espaço no banco,
+   o prefixo é a única coisa que diz qual app é dono de qual tabela.
+
+O nome fica longo, e isso é aceitável: essas tabelas são lidas por código e por quem opera o banco,
+não digitadas o tempo todo.
+
+> **Atenção ao nome das variáveis.** O host injeta `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`
+> e `SPRING_DATASOURCE_PASSWORD` — não `IS_DATASOURCE_*`. Elas chegam como variáveis de ambiente e,
+> por terem precedência sobre o `application.properties`, sobrescrevem `spring.datasource.*`
+> diretamente. O `${IS_DATASOURCE_URL:...}` que aparece nos exemplos serve apenas de default para
+> desenvolvimento local.
+
+---
+
 ## Templates Thymeleaf
 
 **Regra:** todos os templates devem ter nome começando com `isp-`. Qualquer template sem esse prefixo não é carregado pelo IS.
@@ -724,6 +801,8 @@ Commite o `package-layout/` completo (exceto `plugin.jar` e `checksums.sha256`, 
 ## Checklist antes de empacotar
 
 - [ ] `plugin_id` em `plugin-manifest.json` é único e sem espaços
+- [ ] **O DDL cria `apps` com `CREATE SCHEMA IF NOT EXISTS` e qualifica todas as instruções**
+- [ ] **Toda tabela e índice criados pelo app começam com o `plugin_id` em snake_case**
 - [ ] `base_path` segue o padrão `/api/plugins/{slug}`
 - [ ] `PluginRuntimeController` expõe `GET {base_path}/api/runtime-health` → `"ok"`
 - [ ] `AgentPanelController` expõe `GET {base_path}/` retornando `"isp-index"`

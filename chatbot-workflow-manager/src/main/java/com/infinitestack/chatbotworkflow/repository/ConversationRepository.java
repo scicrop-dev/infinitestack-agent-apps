@@ -16,13 +16,13 @@ import com.infinitestack.chatbotworkflow.domain.ConversationState;
 import com.infinitestack.chatbotworkflow.domain.ConversationStatus;
 
 /**
- * Acesso a chatbot_conversation e chatbot_event.
+ * Acesso a chatbot_workflow_manager_conversation e chatbot_workflow_manager_event.
  *
  * As variáveis e a pilha de chamada são gravadas como JSON em colunas TEXT — o conjunto de
  * variáveis é definido por cada fluxo, e a pilha é uma estrutura aninhada, então nenhum dos dois
  * tem schema fixo.
  *
- * chatbot_event é o histórico append-only do que entrou e do que saiu: é o que a UI relê para
+ * chatbot_workflow_manager_event é o histórico append-only do que entrou e do que saiu: é o que a UI relê para
  * remontar o chat depois de um refresh, e o que dá rastreabilidade de uma conversa que deu errado.
  */
 @Repository
@@ -34,26 +34,34 @@ public class ConversationRepository {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final AppSchema appSchema;
 
-    public ConversationRepository(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+    public ConversationRepository(JdbcTemplate jdbc, ObjectMapper objectMapper, AppSchema appSchema) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.appSchema = appSchema;
     }
+
+    private String conversations() { return appSchema.table(SchemaInitializer.T_CONVERSATION); }
+    private String events()        { return appSchema.table(SchemaInitializer.T_EVENT); }
 
     // ─── Conversa ─────────────────────────────────────────────────────────────────
 
     public void insert(Conversation conversation) {
         ConversationState state = conversation.state();
         jdbc.update("""
-                INSERT INTO chatbot_conversation
-                    (id, workflow_id, channel, channel_user_id, status, current_workflow_id,
-                     current_node_id, variables, call_stack, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                INSERT INTO %s
+                    (id, workflow_id, channel, channel_user_id, channel_user_ref, channel_user_name,
+                     status, current_workflow_id, current_node_id, variables, call_stack,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.formatted(conversations()),
                 conversation.id(),
                 conversation.workflowId(),
                 conversation.channel(),
                 conversation.channelUserId(),
+                conversation.channelUserRef(),
+                conversation.channelUserName(),
                 state.status().name(),
                 state.currentWorkflowId(),
                 state.currentNodeId(),
@@ -66,16 +74,19 @@ public class ConversationRepository {
     public void update(Conversation conversation) {
         ConversationState state = conversation.state();
         jdbc.update("""
-                UPDATE chatbot_conversation
+                UPDATE %s
                    SET status = ?, current_workflow_id = ?, current_node_id = ?,
-                       variables = ?, call_stack = ?, updated_at = ?
+                       variables = ?, call_stack = ?, channel_user_ref = ?, channel_user_name = ?,
+                       updated_at = ?
                  WHERE id = ?
-                """,
+                """.formatted(conversations()),
                 state.status().name(),
                 state.currentWorkflowId(),
                 state.currentNodeId(),
                 writeJson(state.variables()),
                 writeJson(state.callStack()),
+                conversation.channelUserRef(),
+                conversation.channelUserName(),
                 Timestamp.from(conversation.updatedAt()),
                 conversation.id());
     }
@@ -83,15 +94,18 @@ public class ConversationRepository {
     /** @return null se não existir. */
     public Conversation findById(String id) {
         List<Conversation> rows = jdbc.query("""
-                SELECT id, workflow_id, channel, channel_user_id, status, current_workflow_id,
-                       current_node_id, variables, call_stack, created_at, updated_at
-                  FROM chatbot_conversation
+                SELECT id, workflow_id, channel, channel_user_id, channel_user_ref, channel_user_name,
+                       status, current_workflow_id, current_node_id, variables, call_stack,
+                       created_at, updated_at
+                  FROM %s
                  WHERE id = ?
-                """, (rs, n) -> new Conversation(
+                """.formatted(conversations()), (rs, n) -> new Conversation(
                         rs.getString("id"),
                         rs.getString("workflow_id"),
                         rs.getString("channel"),
                         rs.getString("channel_user_id"),
+                        rs.getString("channel_user_ref"),
+                        rs.getString("channel_user_name"),
                         new ConversationState(
                                 ConversationStatus.valueOf(rs.getString("status")),
                                 // Conversa gravada antes das colunas de subfluxo existirem tem
@@ -107,7 +121,7 @@ public class ConversationRepository {
     }
 
     public int count() {
-        Integer total = jdbc.queryForObject("SELECT COUNT(*) FROM chatbot_conversation", Integer.class);
+        Integer total = jdbc.queryForObject("SELECT COUNT(*) FROM %s".formatted(conversations()), Integer.class);
         return total == null ? 0 : total;
     }
 
@@ -125,11 +139,11 @@ public class ConversationRepository {
     public Conversation findLatestByChannel(String workflowId, String channel, String channelUserId) {
         List<String> ids = jdbc.query("""
                 SELECT id
-                  FROM chatbot_conversation
+                  FROM %s
                  WHERE workflow_id = ? AND channel = ? AND channel_user_id = ?
                  ORDER BY updated_at DESC
                  LIMIT 1
-                """, (rs, n) -> rs.getString("id"), workflowId, channel, channelUserId);
+                """.formatted(conversations()), (rs, n) -> rs.getString("id"), workflowId, channel, channelUserId);
         return ids.isEmpty() ? null : findById(ids.get(0));
     }
 
@@ -139,19 +153,19 @@ public class ConversationRepository {
         // O seq é calculado a partir do máximo atual e não de uma sequence global porque o que
         // importa é a ordem DENTRO da conversa — é assim que a UI remonta o diálogo.
         jdbc.update("""
-                INSERT INTO chatbot_event (conversation_id, seq, direction, type, payload, created_at)
-                VALUES (?, COALESCE((SELECT MAX(seq) FROM chatbot_event WHERE conversation_id = ?), 0) + 1,
+                INSERT INTO %s (conversation_id, seq, direction, type, payload, created_at)
+                VALUES (?, COALESCE((SELECT MAX(seq) FROM %s WHERE conversation_id = ?), 0) + 1,
                         ?, ?, ?, ?)
-                """, conversationId, conversationId, direction, type, payload, Timestamp.from(Instant.now()));
+                """.formatted(events(), events()), conversationId, conversationId, direction, type, payload, Timestamp.from(Instant.now()));
     }
 
     public List<EventRow> findEvents(String conversationId) {
         return jdbc.query("""
                 SELECT id, conversation_id, seq, direction, type, payload, created_at
-                  FROM chatbot_event
+                  FROM %s
                  WHERE conversation_id = ?
                  ORDER BY seq
-                """, (rs, n) -> new EventRow(
+                """.formatted(events()), (rs, n) -> new EventRow(
                         rs.getLong("id"),
                         rs.getString("conversation_id"),
                         rs.getInt("seq"),

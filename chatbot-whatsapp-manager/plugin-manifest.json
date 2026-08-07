@@ -1,0 +1,20 @@
+{
+  "plugin_id": "chatbot-whatsapp-manager",
+  "name": "Chatbot WhatsApp Manager",
+  "version": "1.0.0",
+  "description": "Painel de conversas do WhatsApp conectado via Baileys: lista os contatos que já interagiram, mostra o histórico de cada conversa e permite responder com texto, imagem ou documento.",
+  "entrypoint": "com.infinitestack.chatbotwhatsapp.Application",
+  "base_path": "/api/plugins/chatbot-whatsapp-manager",
+  "supported_destination_databases": ["postgres"],
+  "requires_host_authentication": true,
+  "requires_host_authorization": true,
+  "requires_host_datasource": true,
+  "allows_own_user_store": false,
+  "allows_own_datasource": false,
+  "web": {
+    "templates_path": "templates",
+    "static_path": "static",
+    "thymeleaf": true,
+    "local_assets_only": true
+  }
+}

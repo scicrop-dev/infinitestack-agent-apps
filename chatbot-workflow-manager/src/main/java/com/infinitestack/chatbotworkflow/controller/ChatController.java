@@ -54,7 +54,12 @@ public class ChatController {
      * localizada por {@code (workflowId, channel, channelUserId)} e o serviço decide entre retomar
      * e recomeçar.
      *
-     * Body: {@code { "workflowId": "...", "channel": "whatsapp", "channelUserId": "...", "text": "..." }}
+     * Body: {@code { "workflowId", "channel", "channelUserId", "text",
+     *                 "channelUserRef"?, "channelUserName"? }}
+     *
+     * <p>{@code channelUserRef} e {@code channelUserName} são metadados do canal (o JID do WhatsApp
+     * e o nome de exibição). Chegam ao fluxo como variáveis {@code is_*} e <b>não</b> participam da
+     * identidade da conversa — trocar de número não abre uma conversa nova.
      */
     @PostMapping("/resume")
     public ResponseEntity<?> resume(@RequestBody Map<String, String> body) {
@@ -70,7 +75,8 @@ public class ChatController {
         }
         try {
             return ResponseEntity.ok(conversationService.resume(
-                    workflowId, body.get("channel"), channelUserId, body.getOrDefault("text", "")));
+                    workflowId, body.get("channel"), channelUserId, body.getOrDefault("text", ""),
+                    body.get("channelUserRef"), body.get("channelUserName")));
         } catch (WorkflowService.WorkflowNotFoundException e) {
             return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
         }

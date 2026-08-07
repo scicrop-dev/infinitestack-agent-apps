@@ -106,18 +106,19 @@ public class ConversationService {
      * @param channelUserId identidade do interlocutor dentro do canal; pode ser null.
      */
     public View start(String workflowId, String channel, String channelUserId) {
-        Outcome outcome = startInternal(workflowId, channel, channelUserId);
+        Outcome outcome = startInternal(workflowId, channel, channelUserId, null, null);
         return toView(outcome.conversation(), outcome.result().error());
     }
 
-    private Outcome startInternal(String workflowId, String channel, String channelUserId) {
+    private Outcome startInternal(String workflowId, String channel, String channelUserId,
+                                  String channelUserRef, String channelUserName) {
         schema.ensureReady();
         Workflow workflow = workflowService.load(workflowId);
 
         Conversation conversation = new Conversation(
                 UUID.randomUUID().toString(), workflowId,
                 channel == null || channel.isBlank() ? "ui" : channel,
-                channelUserId,
+                channelUserId, channelUserRef, channelUserName,
                 ConversationState.initial(),
                 Instant.now(), Instant.now());
 
@@ -190,15 +191,30 @@ public class ConversationService {
      *         recebesse o histórico, que é o que {@link #get(String)} devolve para a UI.
      */
     public Turn resume(String workflowId, String channel, String channelUserId, String text) {
+        return resume(workflowId, channel, channelUserId, text, null, null);
+    }
+
+    /**
+     * @param channelUserRef  identity as the channel knows it (WhatsApp JID) — metadata, never the
+     *                        conversation key: changing numbers must not split someone's history
+     * @param channelUserName display name the channel reports for the speaker
+     */
+    public Turn resume(String workflowId, String channel, String channelUserId, String text,
+                       String channelUserRef, String channelUserName) {
         schema.ensureReady();
 
         String resolvedChannel = (channel == null || channel.isBlank()) ? "external" : channel;
         Conversation existing = repository.findLatestByChannel(workflowId, resolvedChannel, channelUserId);
 
         boolean startingNew = existing == null || existing.state().status().isTerminal();
-        Outcome outcome = startingNew
-                ? startInternal(workflowId, resolvedChannel, channelUserId)
-                : messageInternal(existing, text);
+        Outcome outcome;
+        if (startingNew) {
+            outcome = startInternal(workflowId, resolvedChannel, channelUserId, channelUserRef, channelUserName);
+        } else {
+            // Refreshed on every turn: the contact may have changed their display name since the
+            // conversation started, and the newest report is the right one.
+            outcome = messageInternal(existing.withChannelMetadata(channelUserRef, channelUserName), text);
+        }
 
         return new Turn(
                 outcome.conversation().id(),
@@ -248,10 +264,31 @@ public class ConversationService {
      * being written once at insert time.
      */
     private ConversationState withSystemVariables(Conversation conversation) {
+        String ref = conversation.channelUserRef() == null ? "" : conversation.channelUserRef();
         return conversation.state()
                 .withVariable(ConversationState.VAR_CHANNEL, conversation.channel())
                 .withVariable(ConversationState.VAR_USER_ID,
-                        conversation.channelUserId() == null ? "" : conversation.channelUserId());
+                        conversation.channelUserId() == null ? "" : conversation.channelUserId())
+                .withVariable(ConversationState.VAR_CHANNEL_USER, ref)
+                .withVariable(ConversationState.VAR_PHONE, phoneOf(ref))
+                .withVariable(ConversationState.VAR_CHANNEL_USER_NAME,
+                        conversation.channelUserName() == null ? "" : conversation.channelUserName());
+    }
+
+    /**
+     * Extracts the usable phone number from a WhatsApp JID.
+     *
+     * Derived here rather than sent by the host so the host stays channel-agnostic: it forwards the
+     * identity the channel gave it, and knowing that a WhatsApp JID is "digits@server" is knowledge
+     * about WhatsApp, which belongs where the flow reads it.
+     *
+     * @return only the digits, or empty when the reference is not a phone-shaped JID (a group,
+     *         a Telegram id) — a flow checking {@code is_phone != ''} is asking exactly that.
+     */
+    private String phoneOf(String channelUserRef) {
+        if (channelUserRef == null || channelUserRef.isBlank()) return "";
+        String candidate = channelUserRef.split("@")[0];
+        return candidate.matches("\\d{8,15}") ? candidate : "";
     }
 
     /** Os textos que o fluxo produziu neste turno, na ordem — a mesma regra do persistOutbound. */

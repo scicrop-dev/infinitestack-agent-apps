@@ -53,7 +53,7 @@ public interface ActionExecutor {
          * Efeito cujo produto é uma mensagem, não um valor.
          *
          * Existe por causa do envio de documento: o conteúdo do arquivo chega como data URI, e
-         * devolvê-lo por {@code variables} o gravaria em {@code chatbot_conversation.variables} —
+         * devolvê-lo por {@code variables} o gravaria em {@code chatbot_workflow_manager_conversation.variables} —
          * megabytes de base64 persistidos numa coluna de estado, relidos a cada mensagem seguinte
          * da conversa. Como mensagem, ele passa uma vez e não fica.
          */

@@ -12,7 +12,7 @@ motor.
 | `WAIT_INPUT` | `INPUT` | Sinaliza que o turno acabou e a próxima mensagem do usuário é a resposta |
 | `END` | `END` | Sinaliza encerramento da conversa |
 
-Só `SEND_MESSAGE` vira linha de diálogo em `chatbot_event`. `WAIT_INPUT` e `END` são transições de
+Só `SEND_MESSAGE` vira linha de diálogo em `chatbot_workflow_manager_event`. `WAIT_INPUT` e `END` são transições de
 estado, já refletidas no status da conversa — gravá-las produziria mensagens vazias no chat.
 
 | `DB_QUERY` | nó `DB_QUERY` | Consulta já executada pelo Action Executor — a ação registra o rastro (linhas, parâmetros) |
@@ -35,7 +35,7 @@ timeout obrigatório.
 
 `ActionExecutor.Result.message(...)` existe por causa do `SEND_DOCUMENT`: o produto dele é o
 arquivo, não um valor. Devolvê-lo por `variables` gravaria o base64 em
-`chatbot_conversation.variables` — megabytes numa coluna de estado, relidos a cada mensagem
+`chatbot_workflow_manager_conversation.variables` — megabytes numa coluna de estado, relidos a cada mensagem
 seguinte da conversa. Como mensagem, ele passa uma vez e não fica.
 
 ### Postura de segurança

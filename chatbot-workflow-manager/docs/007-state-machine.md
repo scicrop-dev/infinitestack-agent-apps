@@ -43,4 +43,4 @@ idêntico. Ignorar em silêncio seria pior: no canal real o usuário não tem co
 ## Erro é estado, não exceção
 
 Referência quebrada, `config` faltando, ciclo: tudo leva a `ERROR` com a causa em `EngineResult.error()`.
-O usuário final vê uma mensagem neutra; a causa técnica vai para `chatbot_event` e para o painel.
+O usuário final vê uma mensagem neutra; a causa técnica vai para `chatbot_workflow_manager_event` e para o painel.

@@ -64,6 +64,28 @@ public record ConversationState(
     /** The speaker's identity inside the channel, as the adapter reported it. */
     public static final String VAR_USER_ID = SYSTEM_PREFIX + "user_id";
 
+    /**
+     * The speaker's identity as the channel itself knows it — the raw WhatsApp JID
+     * ({@code 5511999999999@s.whatsapp.net}), the Telegram chat id.
+     *
+     * Separate from {@link #VAR_USER_ID} because they answer different questions: that one is who
+     * the person is inside InfiniteStack and is what keeps a single conversation per person; this
+     * one is what a flow needs when it has to act on the channel — echo the number back, look a
+     * customer up by phone.
+     */
+    public static final String VAR_CHANNEL_USER = SYSTEM_PREFIX + "channel_user";
+
+    /** Just the digits of a WhatsApp JID — the usable phone number. Empty on other channels. */
+    public static final String VAR_PHONE = SYSTEM_PREFIX + "phone";
+
+    /**
+     * Display name the channel reports (the WhatsApp push name).
+     *
+     * <p>It is <b>text the contact chose for themselves</b>, so it is fine to greet with and wrong
+     * to trust: never branch on it to decide access, and never treat it as an identity.
+     */
+    public static final String VAR_CHANNEL_USER_NAME = SYSTEM_PREFIX + "channel_user_name";
+
     public static boolean isSystemVariable(String name) {
         return name != null && name.startsWith(SYSTEM_PREFIX);
     }

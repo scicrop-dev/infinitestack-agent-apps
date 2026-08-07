@@ -779,7 +779,10 @@
         table.appendChild(head);
         [
             ['{{is_channel}}', "De onde veio a mensagem: whatsapp, telegram, teams, insights ou ui (chat de teste deste painel)."],
-            ['{{is_user_id}}', 'Identidade de quem está falando, como o canal a informou.']
+            ['{{is_user_id}}', 'Quem está falando, na identidade do InfiniteStack. É o que mantém uma conversa por pessoa.'],
+            ['{{is_channel_user}}', 'A identidade como o canal a conhece — o JID cru do WhatsApp (5511999999999@s.whatsapp.net).'],
+            ['{{is_phone}}', 'Só os dígitos do número, quando há um. Vazio em grupo, no Telegram e no painel — checar is_phone != \'\' é perguntar "tenho telefone?".'],
+            ['{{is_channel_user_name}}', 'Nome de exibição que o contato configurou no WhatsApp. Bom para cumprimentar, errado para confiar: é texto escolhido por ele.']
         ].forEach(pair => {
             const row = document.createElement('tr');
             const name = document.createElement('td');
@@ -803,7 +806,13 @@
             'Adaptar ao canal (no WhatsApp o anexo chega como arquivo; no Teams, como menção):\n\n' +
             '{ "id": "pode-anexar", "type": "IF",\n' +
             '  "config": { "expression": "is_channel == \'whatsapp\' || is_channel == \'insights\'",\n' +
-            '              "then": "envia-pdf", "else": "manda-link" } }';
+            '              "then": "envia-pdf", "else": "manda-link" } }\n\n' +
+            'Cumprimentar sem perguntar o nome, e buscar o cliente pelo telefone:\n\n' +
+            '{ "id": "ola", "type": "MESSAGE", "next": "busca",\n' +
+            '  "config": { "text": "Olá {{is_channel_user_name}}!" } }\n\n' +
+            '{ "id": "busca", "type": "DB_QUERY", "next": "achou",\n' +
+            '  "config": { "sql": "SELECT nome FROM clientes WHERE telefone = :fone",\n' +
+            '              "params": "is_phone", "output": "nome:cliente" } }';
         card.appendChild(pre);
         return card;
     }

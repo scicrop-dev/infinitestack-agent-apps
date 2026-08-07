@@ -21,11 +21,13 @@ Instalação:
 
 Banco suportado: postgres
 
-Tabelas criadas automaticamente no primeiro boot (CREATE TABLE IF NOT EXISTS),
-no schema default da conexão injetada pelo IS:
-  chatbot_workflow      definição JSON dos fluxos
-  chatbot_conversation  estado de execução (status, nó atual, variáveis, pilha)
-  chatbot_event         histórico de mensagens de entrada e saída
+Tabelas criadas automaticamente no primeiro boot, no schema "apps" (criado pelo
+próprio app com CREATE SCHEMA IF NOT EXISTS). Nada é escrito em public — o schema
+separado mantém as tabelas dos apps fora do meio das tabelas de negócio do
+cliente. Configurável em infinitestack.app.schema, default "apps":
+  apps.chatbot_workflow_manager_workflow      definição JSON dos fluxos
+  apps.chatbot_workflow_manager_conversation  estado de execução (status, nó, variáveis, pilha)
+  apps.chatbot_workflow_manager_event         histórico de mensagens de entrada e saída
 
 Na primeira execução, se não houver nenhum fluxo cadastrado, um fluxo de
 demonstração ("Atendimento — Demo") é inserido para que o painel já tenha o que

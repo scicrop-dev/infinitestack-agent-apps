@@ -21,6 +21,7 @@ import com.infinitestack.chatbotworkflow.domain.Conversation;
 import com.infinitestack.chatbotworkflow.engine.WorkflowEngine;
 import com.infinitestack.chatbotworkflow.engine.WorkflowParser;
 import com.infinitestack.chatbotworkflow.engine.WorkflowValidator;
+import com.infinitestack.chatbotworkflow.repository.AppSchema;
 import com.infinitestack.chatbotworkflow.repository.ConversationRepository;
 import com.infinitestack.chatbotworkflow.repository.SchemaInitializer;
 import com.infinitestack.chatbotworkflow.repository.WorkflowRepository;
@@ -50,7 +51,7 @@ class ResumeSemanticsTest {
         ObjectMapper objectMapper = new ObjectMapper();
         WorkflowParser parser = new WorkflowParser(objectMapper);
 
-        SchemaInitializer schema = new SchemaInitializer(null) {
+        SchemaInitializer schema = new SchemaInitializer(null, new AppSchema()) {
             @Override public boolean ensureReady() { return true; }
         };
 
@@ -144,6 +145,48 @@ class ResumeSemanticsTest {
     // ─── Variáveis de sistema ─────────────────────────────────────────────────────
 
     @Test
+    void dadosDoWhatsappChegamAoFluxo() {
+        // O que o pedido resolve: o fluxo enxerga o número e o nome do WhatsApp, não só o userId
+        // do IS. is_phone sai só com os dígitos, que é a forma utilizável.
+        ConversationService.Turn turn = service.resume("atendimento", "whatsapp", "u-thales", "oi",
+                "5516999887766@s.whatsapp.net", "Thales B.");
+
+        assertEquals("5516999887766@s.whatsapp.net", turn.variables().get("is_channel_user"));
+        assertEquals("5516999887766", turn.variables().get("is_phone"));
+        assertEquals("Thales B.", turn.variables().get("is_channel_user_name"));
+        // O userId do IS continua sendo a identidade da conversa.
+        assertEquals("u-thales", turn.variables().get("is_user_id"));
+    }
+
+    @Test
+    void nomeDeExibicaoAtualizaNoMeioDaConversa() {
+        service.resume("atendimento", "whatsapp", "u-1", "oi", "5511999999999@s.whatsapp.net", "Zé");
+        ConversationService.Turn segundo = service.resume("atendimento", "whatsapp", "u-1", "José",
+                "5511999999999@s.whatsapp.net", "José Silva");
+
+        assertEquals("José Silva", segundo.variables().get("is_channel_user_name"));
+    }
+
+    @Test
+    void metadadoAusenteNaoApagaOQueJaExistia() {
+        // Um canal que parou de informar o nome não pode apagar o que o fluxo já estava usando.
+        service.resume("atendimento", "whatsapp", "u-2", "oi", "5511888888888@s.whatsapp.net", "Ana");
+        ConversationService.Turn segundo = service.resume("atendimento", "whatsapp", "u-2", "Ana", null, null);
+
+        assertEquals("Ana", segundo.variables().get("is_channel_user_name"));
+        assertEquals("5511888888888", segundo.variables().get("is_phone"));
+    }
+
+    @Test
+    void isPhoneFicaVazioQuandoNaoHaNumero() {
+        // Grupo, Telegram ou painel: quem checar is_phone != '' está perguntando exatamente isso.
+        ConversationService.Turn turn = service.resume("atendimento", "ui", "u-3", "oi", null, null);
+
+        assertEquals("", turn.variables().get("is_phone"));
+        assertEquals("", turn.variables().get("is_channel_user"));
+    }
+
+    @Test
     void fluxoJaComecaComOCanalEOInterlocutor() {
         ConversationService.Turn turn = service.resume("atendimento", "whatsapp", "5511999", "oi");
 
@@ -187,7 +230,7 @@ class ResumeSemanticsTest {
                     { "id": "outro", "type": "END", "config": { "text": "Segue o link." } }
                 ]}
                 """);
-        SchemaInitializer schema = new SchemaInitializer(null) {
+        SchemaInitializer schema = new SchemaInitializer(null, new AppSchema()) {
             @Override public boolean ensureReady() { return true; }
         };
         ObjectMapper objectMapper = new ObjectMapper();
@@ -207,7 +250,7 @@ class ResumeSemanticsTest {
     private static class InMemoryWorkflowRepository extends WorkflowRepository {
         private final Map<String, Row> rows = new LinkedHashMap<>();
 
-        InMemoryWorkflowRepository() { super(null); }
+        InMemoryWorkflowRepository() { super(null, new AppSchema()); }
 
         @Override public void save(String id, String name, String definition) {
             rows.put(id, new Row(id, name, definition, Instant.now()));
@@ -224,7 +267,7 @@ class ResumeSemanticsTest {
         private final Map<String, Conversation> conversations = new LinkedHashMap<>();
         private final Map<String, List<EventRow>> events = new HashMap<>();
 
-        InMemoryConversationRepository(ObjectMapper objectMapper) { super(null, objectMapper); }
+        InMemoryConversationRepository(ObjectMapper objectMapper) { super(null, objectMapper, new AppSchema()); }
 
         @Override public void insert(Conversation conversation) {
             conversations.put(conversation.id(), conversation);
